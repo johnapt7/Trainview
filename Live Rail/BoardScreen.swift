@@ -13,6 +13,7 @@ struct BoardScreen: View {
     @State private var loadError: String?
     @State private var nrccMessages: [String] = []
     @State private var callingPoints: [String: [String]] = [:]
+    @State private var predictedPlatforms: [String: PredictedPlatform] = [:]
 
     private var filtered: [Train] {
         switch filter {
@@ -81,10 +82,12 @@ struct BoardScreen: View {
 
     private func loadCallingPoints() {
         callingPoints = [:]
+        predictedPlatforms = [:]
         let currentMode = mode
+        let currentCRS = station.code
         for train in services {
             Task {
-                guard let details = try? await APIClient.shared.getServiceDetails(serviceId: train.serviceId) else { return }
+                guard let details = try? await APIClient.shared.getServiceDetails(serviceId: train.serviceId, crs: currentCRS) else { return }
                 let points: [String]
                 if currentMode == .departures {
                     points = details.subsequentCallingPoints.map { $0.station }
@@ -93,6 +96,9 @@ struct BoardScreen: View {
                 }
                 withAnimation(.easeIn(duration: 0.25)) {
                     callingPoints[train.serviceId] = points
+                    if let pred = details.predictedPlatform {
+                        predictedPlatforms[train.serviceId] = pred
+                    }
                 }
             }
         }
@@ -385,7 +391,8 @@ struct BoardScreen: View {
                         train: train,
                         mode: mode,
                         accent: accent,
-                        callingPoints: callingPoints[train.serviceId] ?? []
+                        callingPoints: callingPoints[train.serviceId] ?? [],
+                        predictedPlatform: predictedPlatforms[train.serviceId]
                     ) {
                         onOpenTrain(train)
                     }
@@ -418,11 +425,21 @@ struct TrainCard: View {
     let mode: BoardMode
     let accent: Color
     let callingPoints: [String]
+    var predictedPlatform: PredictedPlatform? = nil
     let onTap: () -> Void
 
     private var isArrival: Bool { mode == .arrivals }
+    private var isPredicted: Bool {
+        train.platform == "—" && predictedPlatform != nil
+    }
+    private var displayPlatform: String {
+        if isPredicted { return predictedPlatform!.platform }
+        return train.platform
+    }
     private var ribbonColor: Color {
-        train.status == .cancelled ? Theme.bad : accent
+        if train.status == .cancelled { return Theme.bad }
+        if isPredicted { return accent.opacity(0.45) }
+        return accent
     }
 
     private var callingPreview: [String] {
@@ -459,23 +476,34 @@ struct TrainCard: View {
 
     private var ribbon: some View {
         VStack(spacing: 0) {
-            Text("PLATFORM")
-                .font(.mono(10, weight: .medium))
-                .tracking(2.4)
+            Text(isPredicted ? "PREDICTED" : "PLATFORM")
+                .font(.mono(isPredicted ? 9 : 10, weight: .medium))
+                .tracking(isPredicted ? 1.8 : 2.4)
                 .rotationEffect(.degrees(-90))
                 .fixedSize()
                 .frame(maxHeight: .infinity)
 
-            Text(train.platform)
+            Text(displayPlatform)
                 .font(.display(26))
                 .tracking(-0.3)
                 .strikethrough(train.status == .cancelled)
                 .opacity(train.status == .cancelled ? 0.7 : 1)
         }
-        .foregroundStyle(Theme.ink)
+        .foregroundStyle(isPredicted ? Theme.ink.opacity(0.7) : Theme.ink)
         .frame(width: 42)
         .padding(.vertical, 14)
         .background(ribbonColor)
+        .overlay(alignment: .leading) {
+            if isPredicted {
+                Rectangle()
+                    .fill(.clear)
+                    .frame(width: 2)
+                    .overlay(
+                        Line()
+                            .stroke(Theme.ink.opacity(0.25), style: StrokeStyle(lineWidth: 2, dash: [3, 3]))
+                    )
+            }
+        }
     }
 
     // MARK: - Body
@@ -591,15 +619,30 @@ struct TrainCard: View {
         }
     }
 
+    private var operatorBrand: OperatorBrand {
+        OperatorBrand.brand(for: train.operatorCode)
+    }
+
     private var bottomRow: some View {
         HStack {
-            HStack(spacing: 7) {
-                CodeTag(text: train.operatorCode)
+            HStack(spacing: 0) {
+                Text(train.operatorCode)
+                    .font(.mono(9, weight: .bold))
+                    .tracking(0.5)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 5)
+                    .background(operatorBrand.bg)
+                    .foregroundStyle(operatorBrand.fg)
                 Text(train.operator)
-                    .font(.ui(11))
-                    .foregroundStyle(Theme.inkSoft)
+                    .font(.ui(11, weight: .medium))
+                    .foregroundStyle(operatorBrand.bg)
                     .lineLimit(1)
+                    .padding(.leading, 6)
+                    .padding(.trailing, 8)
+                    .padding(.vertical, 4)
             }
+            .background(operatorBrand.bg.opacity(0.1))
+            .clipShape(Capsule())
             Spacer(minLength: 10)
             if let carriages = train.carriages {
                 HStack(spacing: 5) {

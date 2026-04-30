@@ -91,9 +91,13 @@ final class APIClient {
 
     // MARK: - Service Details
 
-    func getServiceDetails(serviceId: String) async throws -> ServiceDetailsResponse {
+    func getServiceDetails(serviceId: String, crs: String? = nil) async throws -> ServiceDetailsResponse {
         let encoded = serviceId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? serviceId
-        return try await request("/service/\(encoded)")
+        var queryItems: [URLQueryItem]? = nil
+        if let crs {
+            queryItems = [URLQueryItem(name: "crs", value: crs)]
+        }
+        return try await request("/service/\(encoded)", queryItems: queryItems)
     }
 
     // MARK: - Station Search

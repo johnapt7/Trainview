@@ -430,20 +430,25 @@ struct JourneyScreen: View {
         .padding(.vertical, 2)
     }
 
+    private var operatorBrand: OperatorBrand {
+        OperatorBrand.brand(for: train.operatorCode)
+    }
+
     private var heroOperator: some View {
         HStack(spacing: 10) {
             Text(train.operatorCode)
                 .font(.mono(11, weight: .semibold))
                 .tracking(0.8)
-                .foregroundStyle(accent)
+                .foregroundStyle(operatorBrand.fg)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .background(Theme.ink)
+                .background(operatorBrand.bg)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(train.operator)
                     .font(.ui(13, weight: .semibold))
+                    .foregroundStyle(operatorBrand.bg)
                 Text("Service \(train.serviceId.prefix(8).uppercased())")
                     .font(.mono(10, weight: .medium))
                     .tracking(0.3)
@@ -452,7 +457,7 @@ struct JourneyScreen: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.ink.opacity(0.1))
+        .background(operatorBrand.bg.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .padding(.top, 18)
     }

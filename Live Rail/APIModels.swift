@@ -35,6 +35,16 @@ struct BoardService: Codable, Identifiable {
     let status: String
 }
 
+// MARK: - Platform Prediction
+
+struct PredictedPlatform: Codable {
+    let platform: String
+    let confidence: Double
+    let source: String
+    let observationCount: Int?
+    let lastObserved: String?
+}
+
 // MARK: - Service Details
 
 struct ServiceDetailsResponse: Codable {
@@ -48,6 +58,7 @@ struct ServiceDetailsResponse: Codable {
     let cancelReason: String?
     let delayReason: String?
     let platform: String?
+    let predictedPlatform: PredictedPlatform?
     let scheduledDeparture: String?
     let expectedDeparture: String?
     let scheduledArrival: String?
