@@ -8,6 +8,7 @@ enum AppScreen {
 }
 
 struct ContentView: View {
+    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @State private var screen: AppScreen = .welcome
     @State private var activeTrain: Train?
     @State private var activeStation: Station = Station(code: "KGX", name: "King's Cross")
@@ -19,6 +20,7 @@ struct ContentView: View {
             switch screen {
             case .welcome:
                 WelcomeScreen(accent: accent) {
+                    hasSeenWelcome = true
                     withAnimation(.easeInOut(duration: 0.25)) {
                         screen = .home
                     }
@@ -58,6 +60,11 @@ struct ContentView: View {
         }
         .ignoresSafeArea()
         .preferredColorScheme(.light)
+        .onAppear {
+            if hasSeenWelcome {
+                screen = .home
+            }
+        }
     }
 }
 

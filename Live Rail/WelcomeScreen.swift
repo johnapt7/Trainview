@@ -60,7 +60,7 @@ struct WelcomeScreen: View {
 
     private var chipRow: some View {
         HStack(spacing: 6) {
-            WelcomeChip(text: "10,000+ stations")
+            WelcomeChip(text: "2,500+ stations")
             WelcomeChip(text: "Real-time")
             WelcomeChip(text: "Free")
         }

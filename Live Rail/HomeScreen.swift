@@ -101,8 +101,10 @@ struct HomeScreen: View {
         Task {
             do {
                 let wrapper = try await APIClient.shared.getNearbyStations(lat: lat, lng: lng, limit: 5)
-                nearbyStations = (wrapper.stations ?? []).map { Station(from: $0) }
-                nearbyLoaded = true
+                withAnimation(.easeOut(duration: 0.3)) {
+                    nearbyStations = (wrapper.stations ?? []).map { Station(from: $0) }
+                    nearbyLoaded = true
+                }
             } catch {
                 nearbyStations = []
                 nearbyLoaded = true
