@@ -32,15 +32,20 @@ struct JourneyScreen: View {
                 heroSection
                 if isLoading {
                     loadingSection
+                        .transition(.opacity)
                 } else if let error = loadError {
                     errorSection(error)
+                        .transition(.opacity)
                 } else {
-                    factsRow
-                    if let reason = train.cancelReason ?? train.delayReason {
-                        reasonBanner(reason)
+                    VStack(spacing: 0) {
+                        factsRow
+                        if let reason = train.cancelReason ?? train.delayReason {
+                            reasonBanner(reason)
+                        }
+                        performanceCard
+                        stopsSection
                     }
-                    performanceCard
-                    stopsSection
+                    .transition(.opacity.combined(with: .offset(y: 8)))
                 }
             }
         }
@@ -104,13 +109,15 @@ struct JourneyScreen: View {
             loadError = (error as? APIError)?.errorDescription ?? "Could not load service details"
         }
 
+        withAnimation(.easeOut(duration: 0.35)) {
+            isLoading = false
+        }
+
         if loadError == nil,
            let dCrs = details?.destination?.crs, !dCrs.isEmpty,
            let oCrs = details?.origin?.crs, !oCrs.isEmpty {
             reliability = try? await APIClient.shared.getReliability(origin: oCrs, destination: dCrs, days: 5)
         }
-
-        isLoading = false
     }
 
     private func computeDuration(from start: String, to end: String) -> String {
@@ -130,19 +137,74 @@ struct JourneyScreen: View {
     // MARK: - Loading
 
     private var loadingSection: some View {
-        HStack(spacing: 12) {
-            ProgressView()
-                .tint(Theme.ink)
-            Text("Loading journey details...")
-                .font(.ui(13))
-                .foregroundStyle(Theme.inkSoft)
+        VStack(spacing: 14) {
+            skeletonFactsRow
+            skeletonStops
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 18)
         .padding(.top, 18)
+    }
+
+    private var skeletonFactsRow: some View {
+        HStack(spacing: 8) {
+            ForEach(0..<3, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: 6) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Theme.ink.opacity(0.07))
+                        .frame(width: 20, height: 16)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Theme.ink.opacity(0.07))
+                        .frame(width: 36, height: 14)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Theme.ink.opacity(0.05))
+                        .frame(width: 50, height: 10)
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, 12)
+                .padding(.bottom, 11)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.card)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        }
+        .shimmer()
+    }
+
+    private var skeletonStops: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Theme.ink.opacity(0.07))
+                    .frame(width: 100, height: 22)
+                Spacer()
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Theme.ink.opacity(0.05))
+                    .frame(width: 60, height: 14)
+            }
+            VStack(spacing: 0) {
+                ForEach(0..<5, id: \.self) { i in
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(Theme.ink.opacity(i == 0 || i == 4 ? 0.1 : 0.06))
+                            .frame(width: i == 0 || i == 4 ? 14 : 10, height: i == 0 || i == 4 ? 14 : 10)
+                            .frame(width: 22)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Theme.ink.opacity(0.07))
+                            .frame(width: CGFloat.random(in: 90...160), height: 14)
+                        Spacer()
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Theme.ink.opacity(0.06))
+                            .frame(width: 42, height: 14)
+                    }
+                    .padding(.vertical, 10)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 18))
+        }
+        .shimmer()
     }
 
     // MARK: - Error

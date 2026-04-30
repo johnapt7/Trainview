@@ -66,8 +66,10 @@ struct BoardScreen: View {
                 crs: station.code,
                 type: mode == .departures ? "departures" : "arrivals"
             )
-            services = response.services.map { Train(from: $0) }
-            nrccMessages = response.nrccMessages ?? []
+            withAnimation(.easeOut(duration: 0.3)) {
+                services = response.services.map { Train(from: $0) }
+                nrccMessages = response.nrccMessages ?? []
+            }
         } catch {
             services = []
             nrccMessages = []
@@ -89,7 +91,9 @@ struct BoardScreen: View {
                 } else {
                     points = details.previousCallingPoints.map { $0.station }
                 }
-                callingPoints[train.serviceId] = points
+                withAnimation(.easeIn(duration: 0.25)) {
+                    callingPoints[train.serviceId] = points
+                }
             }
         }
     }
@@ -206,6 +210,21 @@ struct BoardScreen: View {
 
     // MARK: - NRCC Messages
 
+    private func stripHTML(_ html: String) -> String {
+        var text = html
+            .replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: "</p>\\s*<p[^>]*>", with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+        text = text.replacingOccurrences(of: "\\s*\\n\\s*", with: "\n", options: .regularExpression)
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var nrccBanner: some View {
         VStack(spacing: 8) {
             ForEach(nrccMessages, id: \.self) { message in
@@ -213,7 +232,7 @@ struct BoardScreen: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.delayedText)
-                    Text(message)
+                    Text(stripHTML(message))
                         .font(.ui(12))
                         .foregroundStyle(Theme.ink)
                         .fixedSize(horizontal: false, vertical: true)
@@ -318,17 +337,9 @@ struct BoardScreen: View {
     private var trainList: some View {
         VStack(spacing: 12) {
             if isLoading && services.isEmpty {
-                HStack(spacing: 12) {
-                    ProgressView()
-                        .tint(Theme.ink)
-                    Text("Loading services...")
-                        .font(.ui(13))
-                        .foregroundStyle(Theme.inkSoft)
+                ForEach(0..<4, id: \.self) { _ in
+                    SkeletonTrainCard()
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-                .background(Theme.card)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
             } else if let error = loadError {
                 VStack(spacing: 8) {
                     Image(systemName: "wifi.slash")
@@ -369,7 +380,7 @@ struct BoardScreen: View {
                 .background(Theme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             } else {
-                ForEach(filtered) { train in
+                ForEach(Array(filtered.enumerated()), id: \.element.id) { index, train in
                     TrainCard(
                         train: train,
                         mode: mode,
@@ -378,6 +389,11 @@ struct BoardScreen: View {
                     ) {
                         onOpenTrain(train)
                     }
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .move(edge: .bottom)),
+                        removal: .opacity
+                    ))
+                    .animation(.easeOut(duration: 0.3).delay(Double(index) * 0.04), value: filtered.count)
                 }
             }
             HStack {

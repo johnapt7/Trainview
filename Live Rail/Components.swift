@@ -140,6 +140,84 @@ struct LiveDot: View {
     }
 }
 
+// MARK: - Shimmer
+
+struct ShimmerModifier: ViewModifier {
+    @State private var phase: CGFloat = -1
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                LinearGradient(
+                    colors: [.clear, Color.white.opacity(0.25), .clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .rotationEffect(.degrees(20))
+                .offset(x: phase * 300)
+                .mask(content)
+            )
+            .onAppear {
+                withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
+                    phase = 1
+                }
+            }
+    }
+}
+
+extension View {
+    func shimmer() -> some View {
+        modifier(ShimmerModifier())
+    }
+}
+
+// MARK: - Skeleton Card
+
+struct SkeletonTrainCard: View {
+    private let bone = Theme.ink.opacity(0.07)
+
+    var body: some View {
+        HStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 0)
+                .fill(Theme.ink.opacity(0.06))
+                .frame(width: 42)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(bone)
+                        .frame(width: 72, height: 20)
+                    Spacer()
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(bone)
+                        .frame(width: 70, height: 22)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(bone)
+                        .frame(width: 40, height: 10)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(bone)
+                        .frame(width: 140, height: 18)
+                }
+                HStack {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(bone)
+                        .frame(width: 28, height: 16)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(bone)
+                        .frame(width: 90, height: 12)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+        }
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shimmer()
+    }
+}
+
 struct MonoLabel: View {
     let text: String
     let size: CGFloat
