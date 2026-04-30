@@ -12,6 +12,7 @@ struct BoardScreen: View {
     @State private var isLoading = false
     @State private var loadError: String?
     @State private var nrccMessages: [String] = []
+    @State private var callingPoints: [String: [String]] = [:]
 
     private var filtered: [Train] {
         switch filter {
@@ -73,6 +74,24 @@ struct BoardScreen: View {
             loadError = (error as? APIError)?.errorDescription ?? "Could not load services"
         }
         isLoading = false
+        loadCallingPoints()
+    }
+
+    private func loadCallingPoints() {
+        callingPoints = [:]
+        let currentMode = mode
+        for train in services {
+            Task {
+                guard let details = try? await APIClient.shared.getServiceDetails(serviceId: train.serviceId) else { return }
+                let points: [String]
+                if currentMode == .departures {
+                    points = details.subsequentCallingPoints.map { $0.station }
+                } else {
+                    points = details.previousCallingPoints.map { $0.station }
+                }
+                callingPoints[train.serviceId] = points
+            }
+        }
     }
 
     // MARK: - Header
@@ -351,7 +370,12 @@ struct BoardScreen: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             } else {
                 ForEach(filtered) { train in
-                    TrainCard(train: train, mode: mode, accent: accent) {
+                    TrainCard(
+                        train: train,
+                        mode: mode,
+                        accent: accent,
+                        callingPoints: callingPoints[train.serviceId] ?? []
+                    ) {
                         onOpenTrain(train)
                     }
                 }
@@ -377,11 +401,29 @@ struct TrainCard: View {
     let train: Train
     let mode: BoardMode
     let accent: Color
+    let callingPoints: [String]
     let onTap: () -> Void
 
     private var isArrival: Bool { mode == .arrivals }
     private var ribbonColor: Color {
         train.status == .cancelled ? Theme.bad : accent
+    }
+
+    private var callingPreview: [String] {
+        guard !callingPoints.isEmpty else { return [] }
+        if isArrival {
+            return Array(callingPoints.dropFirst().suffix(3))
+        } else {
+            return Array(callingPoints.dropLast().prefix(3))
+        }
+    }
+
+    private var hasMoreStops: Bool {
+        if isArrival {
+            return callingPoints.dropFirst().count > 3
+        } else {
+            return callingPoints.dropLast().count > 3
+        }
     }
 
     var body: some View {
@@ -426,6 +468,12 @@ struct TrainCard: View {
         VStack(spacing: 10) {
             topRow
             routeSection
+            if let reason = train.cancelReason ?? train.delayReason {
+                reasonRow(reason)
+            }
+            if !callingPreview.isEmpty {
+                callingRow
+            }
             bottomRow
         }
         .padding(.horizontal, 16)
@@ -434,21 +482,24 @@ struct TrainCard: View {
 
     private var topRow: some View {
         HStack(alignment: .top) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(train.time)
                     .font(.mono(22, weight: .medium))
                     .tracking(-0.2)
-                    .foregroundStyle(timeColor)
-                    .strikethrough(train.status == .cancelled)
-                if !train.duration.isEmpty {
-                    Text(isArrival ? "\(train.duration) journey" : train.duration)
-                        .font(.mono(10, weight: .medium))
-                        .tracking(0.4)
-                        .foregroundStyle(Theme.inkMute)
+                    .foregroundStyle(train.status == .delayed ? Theme.inkMute : timeColor)
+                    .strikethrough(train.status == .cancelled || train.status == .delayed)
+                if train.status == .delayed {
+                    Text(train.statusNote)
+                        .font(.mono(18, weight: .semibold))
+                        .tracking(-0.2)
+                        .foregroundStyle(Theme.delayedText)
                 }
             }
             Spacer()
-            StatusPill(status: train.status, label: train.statusNote)
+            StatusPill(
+                status: train.status,
+                label: train.status == .delayed ? "Delayed" : train.statusNote
+            )
         }
     }
 
@@ -491,6 +542,36 @@ struct TrainCard: View {
                         .truncationMode(.tail)
                 }
             }
+        }
+    }
+
+    private func reasonRow(_ reason: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(train.status == .cancelled ? Theme.cancelledText : Theme.delayedText)
+            Text(reason)
+                .font(.ui(11))
+                .foregroundStyle(Theme.inkSoft)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(train.status == .cancelled ? Theme.bad.opacity(0.15) : Theme.warn.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var callingRow: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 9))
+                .foregroundStyle(Theme.inkMute)
+            Text(callingPreview.joined(separator: " \u{00B7} ") + (hasMoreStops ? " \u{00B7}\u{00B7}\u{00B7}" : ""))
+                .font(.ui(11))
+                .foregroundStyle(Theme.inkMute)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
     }
 

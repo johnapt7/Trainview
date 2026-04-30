@@ -13,6 +13,7 @@ struct HomeScreen: View {
     @State private var nearbyLoaded = false
     @State private var locationManager = LocationManager()
     @State private var recentStore = RecentStationsStore()
+    @State private var favouriteStore = FavouriteStationsStore()
     @FocusState private var searchFocused: Bool
 
     private var greeting: String {
@@ -35,6 +36,9 @@ struct HomeScreen: View {
                 if let results = searchResults {
                     searchResultsSection(results)
                 } else {
+                    if !favouriteStore.stations.isEmpty {
+                        favouritesSection
+                    }
                     nearbySection
                     if !recentStore.stations.isEmpty {
                         recentSection
@@ -45,7 +49,17 @@ struct HomeScreen: View {
         }
         .background(Theme.cream)
         .task {
-            locationManager.requestPermission()
+            if locationManager.hasPermission {
+                if let coord = locationManager.location {
+                    if !nearbyLoaded {
+                        fetchNearby(lat: coord.latitude, lng: coord.longitude)
+                    }
+                } else {
+                    locationManager.requestLocation()
+                }
+            } else {
+                locationManager.requestPermission()
+            }
         }
         .onChange(of: locationManager.location) { _, coord in
             if let coord, !nearbyLoaded {
@@ -105,18 +119,12 @@ struct HomeScreen: View {
 
     private var headerSection: some View {
         VStack(spacing: 0) {
-            HStack {
-                IconButton(systemName: "ellipsis", size: 14)
-                Spacer()
-                Text("RAIL BOARD")
-                    .font(.mono(11, weight: .semibold))
-                    .tracking(2)
-                    .foregroundStyle(Theme.ink)
-                Spacer()
-                IconButton(systemName: "star", size: 14)
-            }
-            .padding(.top, 6)
-            .padding(.bottom, 18)
+            Text("RAIL BOARD")
+                .font(.mono(11, weight: .semibold))
+                .tracking(2)
+                .foregroundStyle(Theme.ink)
+                .padding(.top, 6)
+                .padding(.bottom, 18)
 
             VStack(alignment: .leading, spacing: 10) {
                 Text(greeting.uppercased())
@@ -217,6 +225,35 @@ struct HomeScreen: View {
                 stationList(results, style: .search)
             }
         }
+        .padding(.horizontal, 18)
+        .padding(.top, 24)
+    }
+
+    // MARK: - Favourites
+
+    private var favouritesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Favourites")
+                    .font(.display(22))
+                    .tracking(-0.2)
+                Spacer()
+                HStack(spacing: 5) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 8))
+                    Text("\(favouriteStore.stations.count) saved")
+                        .font(.mono(10, weight: .semibold))
+                        .tracking(0.4)
+                }
+                .foregroundStyle(Theme.ink)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(accent)
+                .clipShape(Capsule())
+            }
+            stationList(favouriteStore.stations, style: .favourite)
+        }
+        .id("favourites")
         .padding(.horizontal, 18)
         .padding(.top, 24)
     }
@@ -337,65 +374,70 @@ struct HomeScreen: View {
     // MARK: - Station List
 
     private enum StationRowStyle {
-        case nearby, search, recent
+        case nearby, search, recent, favourite
     }
 
     private func stationList(_ stations: [Station], style: StationRowStyle) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(stations.enumerated()), id: \.element.code) { index, station in
-                Button {
-                    pickStation(station)
-                } label: {
-                    HStack(spacing: 12) {
-                        Text(station.code)
-                            .font(.mono(11, weight: .semibold))
-                            .tracking(0.4)
-                            .foregroundStyle(Theme.cream)
-                            .frame(width: 42, height: 42)
-                            .background(Theme.ink)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                HStack(spacing: 0) {
+                    Button {
+                        pickStation(station)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(station.code)
+                                .font(.mono(11, weight: .semibold))
+                                .tracking(0.4)
+                                .foregroundStyle(Theme.cream)
+                                .frame(width: 42, height: 42)
+                                .background(Theme.ink)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(station.name)
-                                .font(.display(18))
-                                .tracking(-0.1)
-                                .foregroundStyle(Theme.ink)
-                                .lineLimit(1)
-                            if station.isInterchange {
-                                Text("Interchange station")
-                                    .font(.ui(11))
-                                    .foregroundStyle(Theme.inkMute)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(station.name)
+                                    .font(.display(18))
+                                    .tracking(-0.1)
+                                    .foregroundStyle(Theme.ink)
+                                    .lineLimit(1)
+                                if station.isInterchange {
+                                    Text("Interchange station")
+                                        .font(.ui(11))
+                                        .foregroundStyle(Theme.inkMute)
+                                }
                             }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                        switch style {
-                        case .recent:
-                            Text("RECENT")
-                                .font(.mono(9, weight: .semibold))
-                                .tracking(1)
-                                .foregroundStyle(Theme.inkMute)
-                        case .nearby:
-                            if let dist = station.dist {
+                            if case .nearby = style, let dist = station.dist {
                                 Text(dist < 1 ? String(format: "%.0fm", dist * 1000) : String(format: "%.1fkm", dist))
                                     .font(.mono(12, weight: .semibold))
                                     .tracking(-0.1)
                                     .foregroundStyle(Theme.ink)
                             }
-                        case .search:
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(Theme.inkMute)
                         }
                     }
-                    .padding(14)
-                    .overlay(alignment: .bottom) {
-                        if index < stations.count - 1 {
-                            Divider().overlay(Theme.line)
+                    .buttonStyle(.plain)
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            favouriteStore.toggle(station)
                         }
+                    } label: {
+                        Image(systemName: favouriteStore.contains(station) ? "star.fill" : "star")
+                            .font(.system(size: 14))
+                            .foregroundStyle(favouriteStore.contains(station) ? accent : Theme.inkMute)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 6)
+                .padding(.vertical, 4)
+                .overlay(alignment: .bottom) {
+                    if index < stations.count - 1 {
+                        Divider().overlay(Theme.line)
                     }
                 }
-                .buttonStyle(.plain)
             }
         }
         .background(Theme.card)

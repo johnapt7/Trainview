@@ -57,6 +57,7 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+        .preferredColorScheme(.light)
     }
 }
 
