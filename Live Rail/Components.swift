@@ -7,7 +7,7 @@ struct StatusPill: View {
     private var colors: (bg: Color, fg: Color, dot: Color) {
         switch status {
         case .onTime:
-            return (Theme.accent, Theme.ink, Theme.ink)
+            return (Theme.onTimeBg, Theme.ink, Theme.ink)
         case .delayed:
             return (Theme.warn, Color(hex: 0x3B2A05), Color(hex: 0x8A5A00))
         case .cancelled:
@@ -73,55 +73,6 @@ struct DotSeparator: View {
         Circle()
             .fill(Theme.inkMute.opacity(0.5))
             .frame(width: 3, height: 3)
-    }
-}
-
-struct PlatformStrip: View {
-    let accent: Color
-
-    private struct PlatformRow {
-        let platform: String
-        let segments: [(at: Double, status: TrainStatus)]
-    }
-
-    private let rows: [PlatformRow] = [
-        PlatformRow(platform: "3", segments: [(2, .onTime), (38, .onTime)]),
-        PlatformRow(platform: "5", segments: [(15, .onTime)]),
-        PlatformRow(platform: "7", segments: [(8, .delayed), (48, .onTime)]),
-        PlatformRow(platform: "9", segments: [(35, .cancelled)]),
-        PlatformRow(platform: "12", segments: [(22, .onTime)]),
-    ]
-
-    private func colorFor(_ status: TrainStatus) -> Color {
-        switch status {
-        case .delayed: return Theme.delayedText
-        case .cancelled: return Theme.cancelledText
-        case .onTime: return Theme.ink
-        }
-    }
-
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let rowH: CGFloat = 5
-            let gap: CGFloat = 3
-            VStack(spacing: gap) {
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Theme.ink.opacity(0.08))
-                            .frame(height: rowH)
-                        ForEach(Array(row.segments.enumerated()), id: \.offset) { _, seg in
-                            Capsule()
-                                .fill(colorFor(seg.status).opacity(seg.status == .cancelled ? 0.45 : 1))
-                                .frame(width: 18, height: rowH)
-                                .offset(x: CGFloat(seg.at / 60.0) * w)
-                        }
-                    }
-                }
-            }
-        }
-        .frame(height: 40)
     }
 }
 

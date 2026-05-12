@@ -12,17 +12,32 @@ struct BoardScreen: View {
     @State private var isLoading = false
     @State private var loadError: String?
     @State private var nrccMessages: [String] = []
-    @State private var callingPoints: [String: [String]] = [:]
-    @State private var predictedPlatforms: [String: PredictedPlatform] = [:]
+    @State private var callingPoints: [String: [CallingPointResponse]] = [:]
+    @State private var callingPointsTasks: [Task<Void, Never>] = []
+    @State private var showSearch = false
+    @State private var showFAQ = false
+    @State private var filterDestination: Station?
+    @State private var timeOffset: Int = 0
+    @State private var favouriteStore = FavouriteStationsStore()
+    @State private var stationDisruptions: [StationDisruption] = []
+
+    private var fastestDestinations: [Station] {
+        favouriteStore.stations.filter { $0.code != station.code }
+    }
 
     private var filtered: [Train] {
+        var result: [Train]
         switch filter {
-        case .all: return services
-        case .onTime: return services.filter { $0.status == .onTime }
-        case .intercity: return services.filter {
+        case .all: result = services
+        case .onTime: result = services.filter { $0.status == .onTime }
+        case .intercity: result = services.filter {
             ["GR", "XC", "AW", "GW", "TP", "VT", "EM", "HT", "GC"].contains($0.operatorCode)
         }
         }
+        if let dest = filterDestination {
+            result = result.filter { $0.destinationCrs == dest.code }
+        }
+        return result
     }
 
     private var isArrival: Bool { mode == .arrivals }
@@ -30,19 +45,52 @@ struct BoardScreen: View {
     private var timeString: String {
         let fmt = DateFormatter()
         fmt.dateFormat = "HH:mm"
-        return fmt.string(from: Date())
+        let date = Date().addingTimeInterval(TimeInterval(timeOffset * 60))
+        return fmt.string(from: date)
+    }
+
+    private var footerLabel: String {
+        if timeOffset != 0 {
+            return isArrival ? "END OF ARRIVALS AT \(timeString)" : "END OF DEPARTURES AT \(timeString)"
+        }
+        return isArrival ? "END OF SCHEDULED ARRIVALS" : "END OF SCHEDULED DEPARTURES"
+    }
+
+    private var timeLabel: String {
+        if timeOffset == 0 { return "NOW" }
+        let mins = abs(timeOffset)
+        if mins >= 60 {
+            let h = mins / 60
+            let m = mins % 60
+            return m > 0 ? "\(h)H \(m)M AGO" : "\(h)H AGO"
+        }
+        return "\(mins)M AGO"
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 0) {
-                headerSection
-                if !nrccMessages.isEmpty {
-                    nrccBanner
+        VStack(spacing: 0) {
+            pinnedTopBar
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    stationCard
+                        .padding(.horizontal, 18)
+                        .padding(.top, 4)
+                    if !isArrival && !fastestDestinations.isEmpty {
+                        FastestDeparturesCard(
+                            originCrs: station.code,
+                            favourites: fastestDestinations,
+                            accent: accent,
+                            onOpenTrain: onOpenTrain
+                        )
+                        .padding(.top, 14)
+                    }
+                    if filterDestination != nil {
+                        destinationBanner
+                    }
+                    filterRow
+                    resultsRow
+                    trainList
                 }
-                filterRow
-                resultsRow
-                trainList
             }
         }
         .background(Theme.cream)
@@ -55,6 +103,15 @@ struct BoardScreen: View {
         .onChange(of: mode) { _, _ in
             Task { await loadBoard() }
         }
+        .sheet(isPresented: $showSearch) {
+            StationSearchSheet(currentStation: station.code) { selected in
+                filterDestination = selected
+                Task { await loadBoard() }
+            }
+        }
+        .sheet(isPresented: $showFAQ) {
+            FAQSheet()
+        }
     }
 
     // MARK: - Data
@@ -65,15 +122,24 @@ struct BoardScreen: View {
         do {
             let response = try await APIClient.shared.getBoard(
                 crs: station.code,
-                type: mode == .departures ? "departures" : "arrivals"
+                type: mode == .departures ? "departures" : "arrivals",
+                filterCrs: filterDestination?.code,
+                timeOffset: timeOffset != 0 ? timeOffset : nil
             )
             withAnimation(.easeOut(duration: 0.3)) {
                 services = response.services.map { Train(from: $0) }
                 nrccMessages = response.nrccMessages ?? []
             }
+
+            if let disruptions = try? await APIClient.shared.getStationDisruptions(crs: station.code) {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    stationDisruptions = disruptions.disruptions
+                }
+            }
         } catch {
             services = []
             nrccMessages = []
+            stationDisruptions = []
             loadError = (error as? APIError)?.errorDescription ?? "Could not load services"
         }
         isLoading = false
@@ -81,38 +147,37 @@ struct BoardScreen: View {
     }
 
     private func loadCallingPoints() {
+        for task in callingPointsTasks { task.cancel() }
+        callingPointsTasks.removeAll()
         callingPoints = [:]
-        predictedPlatforms = [:]
         let currentMode = mode
-        let currentCRS = station.code
         for train in services {
-            Task {
-                guard let details = try? await APIClient.shared.getServiceDetails(serviceId: train.serviceId, crs: currentCRS) else { return }
-                let points: [String]
-                if currentMode == .departures {
-                    points = details.subsequentCallingPoints.map { $0.station }
-                } else {
-                    points = details.previousCallingPoints.map { $0.station }
-                }
+            let serviceId = train.serviceId
+            let task = Task {
+                guard let details = try? await APIClient.shared.getServiceDetails(serviceId: serviceId) else { return }
+                guard !Task.isCancelled else { return }
+                let points = currentMode == .departures
+                    ? details.subsequentCallingPoints
+                    : details.previousCallingPoints
                 withAnimation(.easeIn(duration: 0.25)) {
-                    callingPoints[train.serviceId] = points
-                    if let pred = details.predictedPlatform {
-                        predictedPlatforms[train.serviceId] = pred
-                    }
+                    callingPoints[serviceId] = points
                 }
             }
+            callingPointsTasks.append(task)
         }
     }
 
     // MARK: - Header
 
-    private var headerSection: some View {
-        VStack(spacing: 0) {
-            topBar
-            stationCard
-        }
-        .padding(.horizontal, 18)
-        .padding(.top, 62)
+    /// Sits outside the ScrollView so the back / mode toggle / search / info
+    /// controls stay reachable while the board scrolls beneath. Top padding
+    /// keeps it clear of the status bar and Dynamic Island.
+    private var pinnedTopBar: some View {
+        topBar
+            .padding(.horizontal, 18)
+            .padding(.top, 62)
+            .padding(.bottom, 4)
+            .background(Theme.cream)
     }
 
     private var topBar: some View {
@@ -137,7 +202,18 @@ struct BoardScreen: View {
 
             Spacer()
 
-            IconButton(systemName: "magnifyingglass", size: 14)
+            HStack(spacing: 6) {
+                ZStack(alignment: .topTrailing) {
+                    IconButton(systemName: "magnifyingglass", size: 14) { showSearch = true }
+                    if filterDestination != nil {
+                        Circle()
+                            .fill(Color(hex: 0xC94A2E))
+                            .frame(width: 7, height: 7)
+                            .offset(x: -4, y: 4)
+                    }
+                }
+                IconButton(systemName: "info.circle", size: 14) { showFAQ = true }
+            }
         }
         .padding(.vertical, 6)
         .padding(.bottom, 10)
@@ -157,6 +233,10 @@ struct BoardScreen: View {
     }
 
     // MARK: - Station Card
+
+    private var onTimeCount: Int { services.filter { $0.status == .onTime }.count }
+    private var delayedCount: Int { services.filter { $0.status == .delayed }.count }
+    private var cancelledCount: Int { services.filter { $0.status == .cancelled }.count }
 
     private var stationCard: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -192,8 +272,20 @@ struct BoardScreen: View {
             }
             .padding(.top, 6)
 
-            PlatformStrip(accent: accent)
-                .padding(.vertical, 10)
+            if !services.isEmpty {
+                statusTallyRow
+                    .padding(.top, 8)
+            }
+
+            if !nrccMessages.isEmpty {
+                inlineDisruption
+                    .padding(.top, 12)
+            }
+
+            if !stationDisruptions.isEmpty {
+                disruptionCards
+                    .padding(.top, nrccMessages.isEmpty ? 12 : 6)
+            }
 
             HStack(spacing: 8) {
                 CodeTag(text: station.code)
@@ -205,6 +297,7 @@ struct BoardScreen: View {
                         .foregroundStyle(Theme.ink)
                 }
             }
+            .padding(.top, 14)
         }
         .padding(.horizontal, 18)
         .padding(.top, 16)
@@ -214,7 +307,95 @@ struct BoardScreen: View {
         .shadow(color: Theme.ink.opacity(0.05), radius: 0, y: 1)
     }
 
-    // MARK: - NRCC Messages
+    private var statusTallyRow: some View {
+        HStack(spacing: 12) {
+            tallyItem(count: onTimeCount, label: "on time", color: Theme.perfGood)
+            if delayedCount > 0 {
+                tallyItem(count: delayedCount, label: "delayed", color: Theme.delayedText)
+            }
+            if cancelledCount > 0 {
+                tallyItem(count: cancelledCount, label: "cancelled", color: Theme.cancelledText)
+            }
+        }
+    }
+
+    private func tallyItem(count: Int, label: String, color: Color) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text("\(count)")
+                .font(.mono(12, weight: .semibold))
+                .foregroundStyle(Theme.ink)
+            Text(label)
+                .font(.ui(11))
+                .foregroundStyle(Theme.inkSoft)
+        }
+    }
+
+    private var inlineDisruption: some View {
+        VStack(spacing: 6) {
+            ForEach(nrccMessages, id: \.self) { message in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.delayedText)
+                        .padding(.top, 1)
+                    Text(stripHTML(message))
+                        .font(.ui(12))
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.warn.opacity(0.35))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+        }
+    }
+
+    private var disruptionCards: some View {
+        VStack(spacing: 6) {
+            ForEach(stationDisruptions) { disruption in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(disruptionColor(disruption.severity))
+                        .padding(.top, 1)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(disruption.description)
+                            .font(.ui(12))
+                            .foregroundStyle(Theme.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 4) {
+                            ForEach(disruption.affectedOperators, id: \.self) { op in
+                                Text(op)
+                                    .font(.mono(9, weight: .medium))
+                                    .tracking(0.3)
+                                    .foregroundStyle(Theme.inkSoft)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(Theme.ink.opacity(0.06))
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                            }
+                        }
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(disruptionColor(disruption.severity).opacity(0.2))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+        }
+    }
+
+    private func disruptionColor(_ severity: String) -> Color {
+        switch severity {
+        case "High": return Theme.cancelledText
+        case "Medium": return Theme.delayedText
+        default: return Theme.delayedText
+        }
+    }
 
     private func stripHTML(_ html: String) -> String {
         var text = html
@@ -231,41 +412,67 @@ struct BoardScreen: View {
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var nrccBanner: some View {
-        VStack(spacing: 8) {
-            ForEach(nrccMessages, id: \.self) { message in
-                HStack(spacing: 10) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.delayedText)
-                    Text(stripHTML(message))
-                        .font(.ui(12))
-                        .foregroundStyle(Theme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
+    // MARK: - Destination Banner
+
+    private var destinationBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(accent)
+            Text("Calling at \(Text(filterDestination?.name ?? "").font(.ui(12, weight: .semibold)).foregroundStyle(Theme.ink))")
+                .font(.ui(12))
+                .foregroundStyle(Theme.inkSoft)
+            Spacer()
+            Button {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    filterDestination = nil
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.warn.opacity(0.3))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                Task { await loadBoard() }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.inkMute)
+                    .frame(width: 24, height: 24)
+                    .background(Theme.ink.opacity(0.08))
+                    .clipShape(Circle())
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(accent.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 18)
         .padding(.top, 12)
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
     // MARK: - Filters
 
     private var filterRow: some View {
         HStack {
-            HStack(spacing: 6) {
-                Image(systemName: "clock")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.inkSoft)
-                Text("NOW \u{00B7} \(timeString)")
-                    .font(.mono(11, weight: .medium))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.inkSoft)
+            Button {
+                guard timeOffset != 0 else { return }
+                timeOffset = 0
+                Task { await loadBoard() }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: timeOffset == 0 ? "clock" : "clock.arrow.circlepath")
+                        .font(.system(size: 10))
+                    Text("\(timeLabel) \u{00B7} \(timeString)")
+                        .font(.mono(11, weight: .medium))
+                        .tracking(0.8)
+                    if timeOffset != 0 {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                }
+                .foregroundStyle(timeOffset == 0 ? Theme.inkSoft : Theme.ink)
+                .padding(.horizontal, timeOffset != 0 ? 9 : 0)
+                .padding(.vertical, timeOffset != 0 ? 5 : 0)
+                .background(timeOffset != 0 ? accent.opacity(0.25) : .clear)
+                .clipShape(Capsule())
             }
+            .disabled(timeOffset == 0)
             Spacer()
             HStack(spacing: 6) {
                 filterChip("All", mode: .all)
@@ -338,6 +545,38 @@ struct BoardScreen: View {
         .padding(.bottom, 14)
     }
 
+    // MARK: - Earlier Trains
+
+    private var earlierTrainsButton: some View {
+        Button {
+            timeOffset = max(timeOffset - 30, -120)
+            Task { await loadBoard() }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(timeOffset == 0 ? "Show earlier trains" : "Show 30 min earlier")
+                    .font(.ui(12, weight: .semibold))
+                    .tracking(0.2)
+                Spacer()
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.inkMute)
+            }
+            .foregroundStyle(Theme.ink)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity)
+            .background(Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Theme.line, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Train List
 
     private var trainList: some View {
@@ -374,6 +613,9 @@ struct BoardScreen: View {
                 .background(Theme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             } else if services.isEmpty {
+                if timeOffset > -120 {
+                    earlierTrainsButton
+                }
                 VStack(spacing: 4) {
                     Text("No services")
                         .font(.display(18))
@@ -386,13 +628,15 @@ struct BoardScreen: View {
                 .background(Theme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             } else {
+                if timeOffset > -120 {
+                    earlierTrainsButton
+                }
                 ForEach(Array(filtered.enumerated()), id: \.element.id) { index, train in
                     TrainCard(
                         train: train,
                         mode: mode,
                         accent: accent,
-                        callingPoints: callingPoints[train.serviceId] ?? [],
-                        predictedPlatform: predictedPlatforms[train.serviceId]
+                        callingPoints: callingPoints[train.serviceId] ?? []
                     ) {
                         onOpenTrain(train)
                     }
@@ -404,7 +648,7 @@ struct BoardScreen: View {
                 }
             }
             HStack {
-                Text(isArrival ? "END OF SCHEDULED ARRIVALS" : "END OF SCHEDULED DEPARTURES")
+                Text(footerLabel)
                     .font(.mono(10))
                     .tracking(1.8)
                     .foregroundStyle(Theme.inkMute)
@@ -424,25 +668,17 @@ struct TrainCard: View {
     let train: Train
     let mode: BoardMode
     let accent: Color
-    let callingPoints: [String]
-    var predictedPlatform: PredictedPlatform? = nil
+    let callingPoints: [CallingPointResponse]
     let onTap: () -> Void
 
     private var isArrival: Bool { mode == .arrivals }
-    private var isPredicted: Bool {
-        train.platform == "—" && predictedPlatform != nil
-    }
-    private var displayPlatform: String {
-        if isPredicted { return predictedPlatform!.platform }
-        return train.platform
-    }
     private var ribbonColor: Color {
         if train.status == .cancelled { return Theme.bad }
-        if isPredicted { return accent.opacity(0.45) }
+        if train.isPredictedPlatform { return accent.opacity(0.45) }
         return accent
     }
 
-    private var callingPreview: [String] {
+    private var callingPreview: [CallingPointResponse] {
         guard !callingPoints.isEmpty else { return [] }
         if isArrival {
             return Array(callingPoints.dropFirst().suffix(3))
@@ -476,25 +712,25 @@ struct TrainCard: View {
 
     private var ribbon: some View {
         VStack(spacing: 0) {
-            Text(isPredicted ? "PREDICTED" : "PLATFORM")
-                .font(.mono(isPredicted ? 9 : 10, weight: .medium))
-                .tracking(isPredicted ? 1.8 : 2.4)
+            Text(train.isPredictedPlatform ? "PREDICTED" : "PLATFORM")
+                .font(.mono(train.isPredictedPlatform ? 9 : 10, weight: .medium))
+                .tracking(train.isPredictedPlatform ? 1.8 : 2.4)
                 .rotationEffect(.degrees(-90))
                 .fixedSize()
                 .frame(maxHeight: .infinity)
 
-            Text(displayPlatform)
+            Text(train.platform)
                 .font(.display(26))
                 .tracking(-0.3)
                 .strikethrough(train.status == .cancelled)
                 .opacity(train.status == .cancelled ? 0.7 : 1)
         }
-        .foregroundStyle(isPredicted ? Theme.ink.opacity(0.7) : Theme.ink)
+        .foregroundStyle(train.isPredictedPlatform ? Theme.ink.opacity(0.7) : Theme.ink)
         .frame(width: 42)
         .padding(.vertical, 14)
         .background(ribbonColor)
         .overlay(alignment: .leading) {
-            if isPredicted {
+            if train.isPredictedPlatform {
                 Rectangle()
                     .fill(.clear)
                     .frame(width: 2)
@@ -556,19 +792,8 @@ struct TrainCard: View {
     }
 
     private var routeSection: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(spacing: 0) {
-                Circle()
-                    .fill(Theme.ink)
-                    .frame(width: 6, height: 6)
-                DashedLine()
-                    .stroke(Theme.inkMute.opacity(0.4), style: StrokeStyle(lineWidth: 2, dash: [2, 3]))
-                    .frame(width: 2, height: 24)
-            }
-            .frame(width: 12)
-            .padding(.top, 6)
-
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(isArrival ? "FROM" : "TO")
                     .font(.mono(9, weight: .semibold))
                     .tracking(1.3)
@@ -578,15 +803,60 @@ struct TrainCard: View {
                     .tracking(-0.1)
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
-                if !train.via.isEmpty {
-                    Text("via \(train.via)")
-                        .font(.ui(11))
-                        .foregroundStyle(Theme.inkMute)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+            }
+            if !metaFacts.isEmpty {
+                Text(metaFacts.joined(separator: " · "))
+                    .font(.mono(11, weight: .medium))
+                    .tracking(0.2)
+                    .foregroundStyle(Theme.inkMute)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
         }
+    }
+
+    /// Single-line facts shown under the destination: duration, via, arrival.
+    /// Each piece is dropped when the data isn't available so the line stays
+    /// tight on shorter journeys.
+    private var metaFacts: [String] {
+        var parts: [String] = []
+        if let duration = journeyDurationString {
+            parts.append(duration)
+        }
+        if !train.via.isEmpty {
+            parts.append("via \(train.via)")
+        }
+        if let arrival = arrivalAtTerminus {
+            parts.append(isArrival ? "dep \(arrival)" : "arr \(arrival)")
+        }
+        return parts
+    }
+
+    private var journeyDurationString: String? {
+        guard let depart = journeyDepartTime, let arrive = journeyArriveTime else { return nil }
+        return TimeFormat.journeyDuration(from: depart, to: arrive)
+    }
+
+    private var arrivalAtTerminus: String? {
+        isArrival ? journeyDepartTime : journeyArriveTime
+    }
+
+    private var journeyDepartTime: String? {
+        if isArrival {
+            guard let first = callingPoints.first else { return nil }
+            return first.expectedTime.flatMap { TimeFormat.parseClockTime($0) }
+                ?? first.scheduledTime
+        }
+        return TimeFormat.parseClockTime(train.statusNote) ?? train.time
+    }
+
+    private var journeyArriveTime: String? {
+        if isArrival {
+            return TimeFormat.parseClockTime(train.statusNote) ?? train.time
+        }
+        guard let last = callingPoints.last else { return nil }
+        return last.expectedTime.flatMap { TimeFormat.parseClockTime($0) }
+            ?? last.scheduledTime
     }
 
     private func reasonRow(_ reason: String) -> some View {
@@ -606,17 +876,19 @@ struct TrainCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
+    private func callingPointLabel(_ cp: CallingPointResponse) -> String {
+        if let p = cp.platform, !p.isEmpty { return "\(cp.station) [\(p)]" }
+        return cp.station
+    }
+
     private var callingRow: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 9))
-                .foregroundStyle(Theme.inkMute)
-            Text(callingPreview.joined(separator: " \u{00B7} ") + (hasMoreStops ? " \u{00B7}\u{00B7}\u{00B7}" : ""))
-                .font(.ui(11))
-                .foregroundStyle(Theme.inkMute)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
+        let stops = callingPreview.map { callingPointLabel($0) }.joined(separator: " · ")
+        let body = stops + (hasMoreStops ? " · …" : "")
+        return Text("Calls at \(Text(body).foregroundStyle(Theme.inkSoft))").foregroundStyle(Theme.inkMute)
+            .font(.ui(11))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var operatorBrand: OperatorBrand {
@@ -669,15 +941,6 @@ struct TrainCard: View {
 }
 
 // MARK: - Shapes
-
-private struct DashedLine: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { p in
-            p.move(to: CGPoint(x: rect.midX, y: rect.minY))
-            p.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
-        }
-    }
-}
 
 private struct Line: Shape {
     func path(in rect: CGRect) -> Path {

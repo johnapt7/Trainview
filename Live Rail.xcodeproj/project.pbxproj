@@ -6,9 +6,48 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7D5973BC2F9EC359001F5F57 /* TrainTrackingWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7D5973B02F9EC359001F5F57 /* TrainTrackingWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7D5973BA2F9EC359001F5F57 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7D59738D2F9EC357001F5F57 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7D5973B22F9EC359001F5F57;
+			remoteInfo = TrainTrackingWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7D5973B92F9EC359001F5F57 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7D5973BC2F9EC359001F5F57 /* TrainTrackingWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		7D5973952F9EC357001F5F57 /* Live Rail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Live Rail.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		7D5973B02F9EC359001F5F57 /* TrainTrackingWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TrainTrackingWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		7D5973BD2F9EC359001F5F57 /* Exceptions for "TrainTrackingWidget" folder in "TrainTrackingWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7D5973B22F9EC359001F5F57 /* TrainTrackingWidgetExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7D5973972F9EC357001F5F57 /* Live Rail */ = {
@@ -16,10 +55,25 @@
 			path = "Live Rail";
 			sourceTree = "<group>";
 		};
+		7D5973B12F9EC359001F5F57 /* TrainTrackingWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7D5973BD2F9EC359001F5F57 /* Exceptions for "TrainTrackingWidget" folder in "TrainTrackingWidgetExtension" target */,
+			);
+			path = TrainTrackingWidget;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		7D5973922F9EC357001F5F57 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7D5973B42F9EC359001F5F57 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +87,7 @@
 			isa = PBXGroup;
 			children = (
 				7D5973972F9EC357001F5F57 /* Live Rail */,
+				7D5973B12F9EC359001F5F57 /* TrainTrackingWidget */,
 				7D5973962F9EC357001F5F57 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +96,7 @@
 			isa = PBXGroup;
 			children = (
 				7D5973952F9EC357001F5F57 /* Live Rail.app */,
+				7D5973B02F9EC359001F5F57 /* TrainTrackingWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -55,10 +111,12 @@
 				7D5973912F9EC357001F5F57 /* Sources */,
 				7D5973922F9EC357001F5F57 /* Frameworks */,
 				7D5973932F9EC357001F5F57 /* Resources */,
+				7D5973B92F9EC359001F5F57 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7D5973BB2F9EC359001F5F57 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				7D5973972F9EC357001F5F57 /* Live Rail */,
@@ -69,6 +127,28 @@
 			productName = "Live Rail";
 			productReference = 7D5973952F9EC357001F5F57 /* Live Rail.app */;
 			productType = "com.apple.product-type.application";
+		};
+		7D5973B22F9EC359001F5F57 /* TrainTrackingWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7D5973B82F9EC359001F5F57 /* Build configuration list for PBXNativeTarget "TrainTrackingWidgetExtension" */;
+			buildPhases = (
+				7D5973B32F9EC359001F5F57 /* Sources */,
+				7D5973B42F9EC359001F5F57 /* Frameworks */,
+				7D5973B52F9EC359001F5F57 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7D5973B12F9EC359001F5F57 /* TrainTrackingWidget */,
+			);
+			name = TrainTrackingWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = TrainTrackingWidgetExtension;
+			productReference = 7D5973B02F9EC359001F5F57 /* TrainTrackingWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -81,6 +161,9 @@
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					7D5973942F9EC357001F5F57 = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
+					7D5973B22F9EC359001F5F57 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
 				};
@@ -100,12 +183,20 @@
 			projectRoot = "";
 			targets = (
 				7D5973942F9EC357001F5F57 /* Live Rail */,
+				7D5973B22F9EC359001F5F57 /* TrainTrackingWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		7D5973932F9EC357001F5F57 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7D5973B52F9EC359001F5F57 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +213,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7D5973B32F9EC359001F5F57 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7D5973BB2F9EC359001F5F57 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7D5973B22F9EC359001F5F57 /* TrainTrackingWidgetExtension */;
+			targetProxy = 7D5973BA2F9EC359001F5F57 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		7D59739E2F9EC358001F5F57 /* Debug */ = {
@@ -255,6 +361,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Live Rail uses your location to find nearby stations.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -288,6 +395,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Live Rail uses your location to find nearby stations.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -301,6 +409,64 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "ALF-Developments.Live-Rail";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7D5973B62F9EC359001F5F57 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4NSLH85L95;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TrainTrackingWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = TrainTrackingWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "ALF-Developments.Live-Rail.TrainTrackingWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7D5973B72F9EC359001F5F57 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4NSLH85L95;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TrainTrackingWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = TrainTrackingWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "ALF-Developments.Live-Rail.TrainTrackingWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -327,6 +493,15 @@
 			buildConfigurations = (
 				7D5973A12F9EC358001F5F57 /* Debug */,
 				7D5973A22F9EC358001F5F57 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7D5973B82F9EC359001F5F57 /* Build configuration list for PBXNativeTarget "TrainTrackingWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7D5973B62F9EC359001F5F57 /* Debug */,
+				7D5973B72F9EC359001F5F57 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

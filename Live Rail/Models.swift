@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 enum TrainStatus: String, CaseIterable {
     case onTime = "on-time"
@@ -16,22 +17,55 @@ enum StopType: String {
 struct Stop: Identifiable {
     let id = UUID()
     let station: String
+    let crs: String
     let time: String
+    let expectedTime: String?
+    let actualTime: String?
     let platform: String
     let type: StopType
+    let hasDeparted: Bool
 
-    init(station: String, time: String, platform: String, type: StopType) {
+    init(station: String, crs: String = "", time: String, expectedTime: String? = nil, actualTime: String? = nil, platform: String, type: StopType, hasDeparted: Bool = false) {
         self.station = station
+        self.crs = crs
         self.time = time
+        self.expectedTime = expectedTime
+        self.actualTime = actualTime
         self.platform = platform
         self.type = type
+        self.hasDeparted = hasDeparted
     }
 
-    init(from cp: CallingPointResponse) {
-        self.station = cp.station
+    init(from cp: CallingPointResponse, hasDeparted: Bool = false) {
+        self.station = cp.station.decodingHTMLEntities()
+        self.crs = cp.crs
         self.time = cp.scheduledTime
+        self.expectedTime = cp.expectedTime
+        self.actualTime = cp.actualTime
         self.platform = cp.platform ?? "—"
         self.type = cp.status == "delayed" ? .major : .stop
+        self.hasDeparted = hasDeparted
+    }
+
+    var delayMinutes: Int? {
+        guard let scheduled = Stop.parseMinutes(time) else { return nil }
+        let observed: Int? = {
+            if let a = actualTime, let m = Stop.parseMinutes(a) { return m }
+            if let e = expectedTime, let m = Stop.parseMinutes(e) { return m }
+            return nil
+        }()
+        guard let observed else { return nil }
+        var delta = observed - scheduled
+        if delta < -12 * 60 { delta += 24 * 60 }
+        if delta > 12 * 60 { delta -= 24 * 60 }
+        return delta
+    }
+
+    private static func parseMinutes(_ s: String) -> Int? {
+        let parts = s.split(separator: ":")
+        guard parts.count == 2,
+              let h = Int(parts[0]), let m = Int(parts[1]) else { return nil }
+        return h * 60 + m
     }
 }
 
@@ -40,9 +74,11 @@ struct Train: Identifiable {
     let serviceId: String
     let time: String
     let destination: String
+    let destinationCrs: String
     let origin: String
     let via: String
     let platform: String
+    let isPredictedPlatform: Bool
     let `operator`: String
     let operatorCode: String
     let status: TrainStatus
@@ -53,8 +89,11 @@ struct Train: Identifiable {
     let delayReason: String?
     let duration: String
     let stops: [Stop]
+    let rid: String?
+    let uid: String?
+    let headcode: String?
 
-    init(id: String, time: String, destination: String, origin: String,
+    init(id: String, time: String, destination: String, destinationCrs: String = "", origin: String,
          via: String, platform: String, operator: String, operatorCode: String,
          status: TrainStatus, statusNote: String, type: String = "", carriages: Int = 0,
          duration: String = "", stops: [Stop] = []) {
@@ -62,9 +101,11 @@ struct Train: Identifiable {
         self.serviceId = id
         self.time = time
         self.destination = destination
+        self.destinationCrs = destinationCrs
         self.origin = origin
         self.via = via
         self.platform = platform
+        self.isPredictedPlatform = false
         self.operator = `operator`
         self.operatorCode = operatorCode
         self.status = status
@@ -75,17 +116,31 @@ struct Train: Identifiable {
         self.delayReason = nil
         self.duration = duration
         self.stops = stops
+        self.rid = nil
+        self.uid = nil
+        self.headcode = nil
     }
 
     init(from service: BoardService) {
         self.id = service.serviceId
         self.serviceId = service.serviceId
         self.time = service.scheduledTime
-        self.destination = service.destination
-        self.origin = service.origin
-        self.via = service.destinationVia ?? ""
-        self.platform = service.platform ?? "—"
-        self.operator = service.operator
+        self.destination = service.destination.decodingHTMLEntities()
+        self.destinationCrs = service.destinationCrs
+        self.origin = service.origin.decodingHTMLEntities()
+        self.via = (service.destinationVia ?? "").decodingHTMLEntities()
+        if let confirmed = service.platform {
+            self.platform = confirmed
+            self.isPredictedPlatform = false
+        } else if let predicted = service.predictedPlatform,
+                  !Train.hasDeparted(scheduled: service.scheduledTime, expected: service.expectedTime) {
+            self.platform = predicted.platform
+            self.isPredictedPlatform = true
+        } else {
+            self.platform = "—"
+            self.isPredictedPlatform = false
+        }
+        self.operator = service.operator.decodingHTMLEntities()
         self.operatorCode = service.operatorCode
         self.type = ""
         self.carriages = service.length
@@ -93,6 +148,9 @@ struct Train: Identifiable {
         self.delayReason = service.delayReason
         self.duration = ""
         self.stops = []
+        self.rid = service.rid
+        self.uid = service.uid
+        self.headcode = service.headcode
 
         switch service.status {
         case "delayed":
@@ -105,6 +163,24 @@ struct Train: Identifiable {
             self.status = .onTime
             self.statusNote = service.expectedTime
         }
+    }
+
+    private static func hasDeparted(scheduled: String, expected: String) -> Bool {
+        let now = Date()
+        let cal = Calendar.current
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm"
+        fmt.timeZone = .current
+
+        func toToday(_ s: String) -> Date? {
+            guard let t = fmt.date(from: s) else { return nil }
+            let c = cal.dateComponents([.hour, .minute], from: t)
+            return cal.date(bySettingHour: c.hour ?? 0, minute: c.minute ?? 0, second: 0, of: now)
+        }
+
+        guard let target = toToday(expected) ?? toToday(scheduled) else { return false }
+        if target.timeIntervalSince(now) > 6 * 3600 { return true }
+        return target < now
     }
 }
 
@@ -146,4 +222,11 @@ enum FilterMode: String, CaseIterable {
     case all
     case onTime = "on-time"
     case intercity
+}
+
+struct StationPin: Identifiable {
+    let id: String
+    let name: String
+    let coordinate: CLLocationCoordinate2D
+    let type: StopType
 }

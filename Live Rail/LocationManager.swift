@@ -14,6 +14,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     var location: CLLocationCoordinate2D?
     var authorizationStatus: CLAuthorizationStatus = .notDetermined
     var isLoading = false
+    var lastError: Error?
 
     override init() {
         super.init()
@@ -32,6 +33,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             return
         }
         isLoading = true
+        lastError = nil
         manager.requestLocation()
     }
 
@@ -42,24 +44,28 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     // MARK: - CLLocationManagerDelegate
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        MainActor.assumeIsolated {
-            self.location = locations.last?.coordinate
+        let coord = locations.last?.coordinate
+        Task { @MainActor in
+            self.location = coord
             self.isLoading = false
+            self.lastError = nil
         }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        MainActor.assumeIsolated {
+        Task { @MainActor in
             self.isLoading = false
+            self.lastError = error
         }
     }
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        MainActor.assumeIsolated {
-            self.authorizationStatus = manager.authorizationStatus
+        let status = manager.authorizationStatus
+        Task { @MainActor in
+            self.authorizationStatus = status
             if self.hasPermission && self.location == nil {
                 self.isLoading = true
-                manager.requestLocation()
+                self.manager.requestLocation()
             }
         }
     }
