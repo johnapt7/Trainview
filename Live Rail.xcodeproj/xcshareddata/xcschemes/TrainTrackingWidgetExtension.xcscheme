@@ -58,17 +58,6 @@
       allowLocationSimulation = "YES"
       launchAutomaticallySubstyle = "2"
       queueDebuggingEnableBacktraceRecording = "Yes">
-      <RemoteRunnable
-         runnableDebuggingMode = "2"
-         BundleIdentifier = "com.apple.springboard">
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "7D5973B22F9EC359001F5F57"
-            BuildableName = "TrainTrackingWidgetExtension.appex"
-            BlueprintName = "TrainTrackingWidgetExtension"
-            ReferencedContainer = "container:Live Rail.xcodeproj">
-         </BuildableReference>
-      </RemoteRunnable>
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
