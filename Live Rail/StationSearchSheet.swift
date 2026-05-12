@@ -9,6 +9,7 @@ struct StationSearchSheet: View {
     @State private var results: [StationResponse] = []
     @State private var isSearching = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var resultCache: [String: [StationResponse]] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -75,33 +76,78 @@ struct StationSearchSheet: View {
         .padding(.horizontal, 22)
         .onChange(of: query) { _, newValue in
             searchTask?.cancel()
-            guard newValue.count >= 2 else {
-                results = []
+            let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else {
+                withAnimation(.easeOut(duration: 0.15)) { results = [] }
+                isSearching = false
                 return
             }
+
+            let key = trimmed.lowercased()
+            if let cached = cachedResults(for: key) {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    results = cached.filter { $0.crs != currentStation }
+                }
+                return
+            }
+
             searchTask = Task {
-                try? await Task.sleep(for: .milliseconds(300))
+                try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled else { return }
                 isSearching = true
-                let found = (try? await APIClient.shared.searchStations(query: newValue)) ?? []
+                let found = (try? await APIClient.shared.searchStations(query: trimmed)) ?? []
                 guard !Task.isCancelled else { return }
-                results = found.filter { $0.crs != currentStation }
+                resultCache[key] = found
+                withAnimation(.easeOut(duration: 0.15)) {
+                    results = found.filter { $0.crs != currentStation }
+                }
                 isSearching = false
             }
         }
     }
 
+    private func cachedResults(for query: String) -> [StationResponse]? {
+        if let cached = resultCache[query] { return cached }
+        var prefix = String(query.dropLast())
+        while !prefix.isEmpty {
+            if let cached = resultCache[prefix], cached.count < 10 {
+                return cached.filter {
+                    $0.name.lowercased().contains(query) ||
+                    $0.crs.lowercased().contains(query)
+                }
+            }
+            prefix = String(prefix.dropLast())
+        }
+        return nil
+    }
+
     private var resultsList: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(results) { station in
-                    Button {
-                        onSelect(Station(from: station))
-                        dismiss()
-                    } label: {
-                        stationRow(station)
+                if isSearching && results.isEmpty {
+                    ProgressView()
+                        .tint(Theme.inkMute)
+                        .padding(.top, 28)
+                } else if !query.isEmpty && results.isEmpty && !isSearching {
+                    VStack(spacing: 6) {
+                        Text("No stations found")
+                            .font(.ui(14, weight: .medium))
+                            .foregroundStyle(Theme.inkMute)
+                        Text("Try a different name or CRS code")
+                            .font(.ui(12))
+                            .foregroundStyle(Theme.inkMute.opacity(0.7))
                     }
-                    .buttonStyle(.plain)
+                    .padding(.top, 28)
+                } else {
+                    ForEach(results) { station in
+                        Button {
+                            onSelect(Station(from: station))
+                            dismiss()
+                        } label: {
+                            stationRow(station)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             .padding(.top, 8)
