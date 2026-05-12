@@ -20,6 +20,7 @@ struct BoardScreen: View {
     @State private var timeOffset: Int = 0
     @State private var favouriteStore = FavouriteStationsStore()
     @State private var stationDisruptions: [StationDisruption] = []
+    @State private var disruptionsExpanded = false
 
     private var fastestDestinations: [Station] {
         favouriteStore.stations.filter { $0.code != station.code }
@@ -132,8 +133,9 @@ struct BoardScreen: View {
             }
 
             if let disruptions = try? await APIClient.shared.getStationDisruptions(crs: station.code) {
+                let activeOperators = Set(response.services.map(\.operatorCode))
                 withAnimation(.easeOut(duration: 0.3)) {
-                    stationDisruptions = disruptions.disruptions
+                    stationDisruptions = disruptions.disruptions.filter { activeOperators.contains($0.id) }
                 }
             }
         } catch {
@@ -277,14 +279,9 @@ struct BoardScreen: View {
                     .padding(.top, 8)
             }
 
-            if !nrccMessages.isEmpty {
-                inlineDisruption
+            if !nrccMessages.isEmpty || !stationDisruptions.isEmpty {
+                disruptionsBanner
                     .padding(.top, 12)
-            }
-
-            if !stationDisruptions.isEmpty {
-                disruptionCards
-                    .padding(.top, nrccMessages.isEmpty ? 12 : 6)
             }
 
             HStack(spacing: 8) {
@@ -333,68 +330,75 @@ struct BoardScreen: View {
         }
     }
 
-    private var inlineDisruption: some View {
-        VStack(spacing: 6) {
-            ForEach(nrccMessages, id: \.self) { message in
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.delayedText)
-                        .padding(.top, 1)
-                    Text(stripHTML(message))
-                        .font(.ui(12))
-                        .foregroundStyle(Theme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.warn.opacity(0.35))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-        }
-    }
+    private var disruptionsBanner: some View {
+        let totalCount = nrccMessages.count + stationDisruptions.count
+        let hasHigh = stationDisruptions.contains { $0.severity == "High" }
+        let tint = hasHigh ? Theme.cancelledText : Theme.delayedText
 
-    private var disruptionCards: some View {
-        VStack(spacing: 6) {
-            ForEach(stationDisruptions) { disruption in
-                HStack(alignment: .top, spacing: 8) {
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    disruptionsExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
-                        .foregroundStyle(disruptionColor(disruption.severity))
-                        .padding(.top, 1)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(disruption.description)
-                            .font(.ui(12))
+                        .foregroundStyle(tint)
+                    Text(totalCount == 1 ? "1 disruption" : "\(totalCount) disruptions")
+                        .font(.ui(12, weight: .medium))
+                        .foregroundStyle(Theme.ink)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.inkMute)
+                        .rotationEffect(.degrees(disruptionsExpanded ? -180 : 0))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+
+            if disruptionsExpanded {
+                Divider().overlay(tint.opacity(0.3))
+
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(nrccMessages.enumerated()), id: \.offset) { _, message in
+                        Text(stripHTML(message))
+                            .font(.ui(11))
                             .foregroundStyle(Theme.ink)
                             .fixedSize(horizontal: false, vertical: true)
-                        HStack(spacing: 4) {
-                            ForEach(disruption.affectedOperators, id: \.self) { op in
-                                Text(op)
-                                    .font(.mono(9, weight: .medium))
-                                    .tracking(0.3)
-                                    .foregroundStyle(Theme.inkSoft)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 2)
-                                    .background(Theme.ink.opacity(0.06))
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+                    ForEach(stationDisruptions) { disruption in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(disruption.description)
+                                .font(.ui(11))
+                                .foregroundStyle(Theme.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if !disruption.affectedOperators.isEmpty {
+                                HStack(spacing: 3) {
+                                    ForEach(disruption.affectedOperators, id: \.self) { op in
+                                        Text(op)
+                                            .font(.mono(8, weight: .medium))
+                                            .tracking(0.3)
+                                            .foregroundStyle(Theme.inkSoft)
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(Theme.ink.opacity(0.06))
+                                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    }
+                                }
                             }
                         }
                     }
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(disruptionColor(disruption.severity).opacity(0.2))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .transition(.opacity.combined(with: .offset(y: -4)))
             }
         }
-    }
-
-    private func disruptionColor(_ severity: String) -> Color {
-        switch severity {
-        case "High": return Theme.cancelledText
-        case "Medium": return Theme.delayedText
-        default: return Theme.delayedText
-        }
+        .background(tint.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private func stripHTML(_ html: String) -> String {

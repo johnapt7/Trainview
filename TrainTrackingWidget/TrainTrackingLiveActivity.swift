@@ -10,55 +10,72 @@ struct TrainTrackingLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(context.attributes.operatorCode)
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .tracking(0.5)
-                        Text(context.attributes.origin)
-                            .font(.system(size: 11))
-                            .lineLimit(1)
-                    }
+                    Text(context.attributes.operatorCode)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .tracking(0.5)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(.white.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        HStack(spacing: 4) {
-                            if let eta = context.state.destinationArrivalDate {
-                                Text(eta, style: .time)
-                                    .font(.system(size: 18, weight: .medium, design: .monospaced))
-                                    .monospacedDigit()
-                            } else {
-                                Text(context.attributes.scheduledArrival)
-                                    .font(.system(size: 18, weight: .medium, design: .monospaced))
-                            }
-                            if let d = context.state.destinationDelayMinutes, d != 0 {
-                                WidgetDelayChip(minutes: d)
-                            }
-                        }
-                        Text(context.attributes.destination)
-                            .font(.system(size: 11))
-                            .lineLimit(1)
-                    }
+                    statusDot(context.state.status)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 6) {
+                    VStack(spacing: 10) {
+                        HStack(alignment: .bottom) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(context.attributes.origin)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .lineLimit(1)
+                                Text(context.attributes.scheduledDeparture)
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer(minLength: 8)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(context.attributes.destination)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .lineLimit(1)
+                                HStack(spacing: 3) {
+                                    if let eta = context.state.destinationArrivalDate {
+                                        Text(eta, style: .time)
+                                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                            .monospacedDigit()
+                                    } else {
+                                        Text(context.attributes.scheduledArrival)
+                                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    }
+                                    if let d = context.state.destinationDelayMinutes, d != 0 {
+                                        WidgetDelayChip(minutes: d)
+                                    }
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+
                         progressBar(for: context.state)
+
                         HStack {
-                            HStack(spacing: 5) {
-                                Text("Next:")
-                                    .font(.system(size: 12))
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.system(size: 10))
                                     .foregroundStyle(.secondary)
                                 Text(context.state.nextStopName)
                                     .font(.system(size: 12, weight: .medium))
                                     .lineLimit(1)
-                                Text(context.state.nextStopExpectedTime)
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            HStack(spacing: 4) {
                                 if let d = context.state.nextStopDelayMinutes, d != 0 {
                                     WidgetDelayChip(minutes: d)
                                 }
+                                countdownLabel(for: context.state)
                             }
-                            Spacer()
-                            countdownLabel(for: context.state)
                         }
                     }
                 }
@@ -262,6 +279,18 @@ struct TrainTrackingLiveActivity: Widget {
         .padding(.vertical, 4)
         .background(.ultraThinMaterial)
         .clipShape(Capsule())
+    }
+
+    @ViewBuilder
+    private func statusDot(_ status: String) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(statusColor(status))
+                .frame(width: 6, height: 6)
+            Text(status == "on-time" ? "On time" : status == "delayed" ? "Delayed" : "Cancelled")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func statusColor(_ status: String) -> Color {

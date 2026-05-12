@@ -15,6 +15,7 @@ final class TrainTracker {
     var nextStopExpectedTime: String = ""
     var trainStatus: TrainStatus = .onTime
     var lastPolled: Date?
+    var movements: [MovementEvent] = []
 
     private var stopTimes: [Date?] = []
     private var pollingTask: Task<Void, Never>?
@@ -40,6 +41,7 @@ final class TrainTracker {
         trackedStops = []
         boardingStation = nil
         stopTimes = []
+        movements = []
         lastPolled = nil
         endLiveActivity()
     }
@@ -69,10 +71,38 @@ final class TrainTracker {
 
         let now = Date()
         var lastPassedIndex = -1
-        for (i, time) in stopTimes.enumerated() {
-            guard let t = time else { continue }
-            if now >= t {
-                lastPassedIndex = i
+
+        if !movements.isEmpty {
+            var departures: Set<String> = []
+            var arrivals: Set<String> = []
+            for event in movements {
+                guard let crs = event.crs, !crs.isEmpty else { continue }
+                if event.eventType == "DEPARTURE" { departures.insert(crs) }
+                if event.eventType == "ARRIVAL" { arrivals.insert(crs) }
+            }
+
+            var lastDeparted = -1
+            for (i, stop) in trackedStops.enumerated() {
+                guard !stop.crs.isEmpty, departures.contains(stop.crs) else { continue }
+                lastDeparted = i
+            }
+
+            if lastDeparted >= 0 {
+                lastPassedIndex = lastDeparted
+                let nextIdx = lastDeparted + 1
+                if nextIdx < trackedStops.count {
+                    let nextCRS = trackedStops[nextIdx].crs
+                    if !nextCRS.isEmpty && arrivals.contains(nextCRS) && !departures.contains(nextCRS) {
+                        lastPassedIndex = nextIdx
+                    }
+                }
+            }
+        }
+
+        if lastPassedIndex < 0 {
+            for (i, time) in stopTimes.enumerated() {
+                guard let t = time else { continue }
+                if now >= t { lastPassedIndex = i }
             }
         }
 
@@ -245,6 +275,13 @@ final class TrainTracker {
             trainStatus = .delayed
         } else {
             trainStatus = .onTime
+        }
+
+        if let rid = train.rid {
+            let resp = try? await APIClient.shared.getMovements(rid: rid, uid: train.uid)
+            if let events = resp?.movements, !events.isEmpty {
+                movements = events
+            }
         }
 
         recalculatePosition()

@@ -37,9 +37,15 @@ struct HomeScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             pinnedTopBar
+            if !searchFocused && query.isEmpty {
+                greetingHeader
+            }
+            searchBar
+                .padding(.horizontal, 18)
+                .padding(.top, searchFocused || !query.isEmpty ? 4 : 0)
+                .padding(.bottom, 10)
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    headerSection
                     if !tocIndicators.isEmpty {
                         networkStatusRow
                     }
@@ -57,7 +63,9 @@ struct HomeScreen: View {
                     footerView
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
         }
+        .animation(.easeOut(duration: 0.2), value: searchFocused)
         .background(Theme.cream)
         .task {
             if locationManager.hasPermission {
@@ -102,7 +110,7 @@ struct HomeScreen: View {
             return
         }
         searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(300))
+            try? await Task.sleep(for: .milliseconds(100))
             guard !Task.isCancelled else { return }
             do {
                 let results = try await APIClient.shared.searchStations(query: trimmed, limit: 10)
@@ -175,25 +183,22 @@ struct HomeScreen: View {
         .background(Theme.cream)
     }
 
-    private var headerSection: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(greeting.uppercased())
-                    .font(.mono(11))
-                    .tracking(1.5)
-                    .foregroundStyle(Theme.inkMute)
-                Text("Where are you\ntravelling from\(Text("?").foregroundColor(Theme.inkMute))")
-                    .font(.display(36, weight: .medium))
-                    .tracking(-1.3)
-                    .lineSpacing(-4)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 10)
-            .padding(.bottom, 22)
-
-            searchBar
+    private var greetingHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(greeting.uppercased())
+                .font(.mono(11))
+                .tracking(1.5)
+                .foregroundStyle(Theme.inkMute)
+            Text("Where are you\ntravelling from\(Text("?").foregroundColor(Theme.inkMute))")
+                .font(.display(36, weight: .medium))
+                .tracking(-1.3)
+                .lineSpacing(-4)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 18)
+        .padding(.top, 10)
+        .padding(.bottom, 14)
+        .transition(.opacity.combined(with: .offset(y: -10)))
     }
 
     private var searchBar: some View {

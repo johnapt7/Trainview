@@ -204,7 +204,11 @@ final class APIClient {
 
     // MARK: - Movements
 
-    func getMovements(rid: String) async throws -> MovementsResponse {
-        try await request("/movements/\(rid)")
+    func getMovements(rid: String, uid: String? = nil) async throws -> MovementsResponse {
+        var queryItems: [URLQueryItem] = []
+        if let uid, !uid.isEmpty {
+            queryItems.append(URLQueryItem(name: "uid", value: uid))
+        }
+        return try await request("/movements/\(rid)", queryItems: queryItems)
     }
 }

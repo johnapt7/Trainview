@@ -110,6 +110,77 @@ struct JourneyScreen: View {
         return lastPassed
     }
 
+    // MARK: - TRUST Movement Correlation
+
+    private var activeTrustMovements: [MovementEvent] {
+        if isTrackingThis && !tracker.movements.isEmpty {
+            return tracker.movements
+        }
+        return movements
+    }
+
+    private var trustCurrentIndex: Int? {
+        let mvts = activeTrustMovements
+        guard !mvts.isEmpty else { return nil }
+
+        var departures: Set<String> = []
+        var arrivals: Set<String> = []
+        for event in mvts {
+            guard let crs = event.crs, !crs.isEmpty else { continue }
+            if event.eventType == "DEPARTURE" { departures.insert(crs) }
+            if event.eventType == "ARRIVAL" { arrivals.insert(crs) }
+        }
+
+        let stopsToCheck = displayedStops
+        var lastDeparted = -1
+        for (i, stop) in stopsToCheck.enumerated() {
+            guard !stop.crs.isEmpty, departures.contains(stop.crs) else { continue }
+            lastDeparted = i
+        }
+        guard lastDeparted >= 0 else { return nil }
+
+        let nextIdx = lastDeparted + 1
+        if nextIdx < stopsToCheck.count {
+            let nextCRS = stopsToCheck[nextIdx].crs
+            if !nextCRS.isEmpty && arrivals.contains(nextCRS) && !departures.contains(nextCRS) {
+                return nextIdx
+            }
+        }
+        return lastDeparted
+    }
+
+    private func trustInfoForStop(_ stop: Stop) -> TRUSTStopInfo? {
+        let mvts = activeTrustMovements
+        guard !mvts.isEmpty, !stop.crs.isEmpty else { return nil }
+
+        var latestDep: MovementEvent?
+        var latestArr: MovementEvent?
+
+        for event in mvts where event.crs == stop.crs {
+            if event.eventType == "DEPARTURE" {
+                if latestDep == nil || event.actualTimestamp > latestDep!.actualTimestamp {
+                    latestDep = event
+                }
+            } else if event.eventType == "ARRIVAL" {
+                if latestArr == nil || event.actualTimestamp > latestArr!.actualTimestamp {
+                    latestArr = event
+                }
+            }
+        }
+
+        guard latestDep != nil || latestArr != nil else { return nil }
+        let event: MovementEvent = (stop.type == .destination)
+            ? (latestArr ?? latestDep!)
+            : (latestDep ?? latestArr!)
+
+        return TRUSTStopInfo(
+            actualTime: formatISOToClockTime(event.actualTimestamp),
+            delayMinutes: event.variationSeconds / 60,
+            hasDeparted: latestDep != nil,
+            hasArrived: latestArr != nil
+        )
+    }
+
     private static func parseStopTimes(_ stops: [Stop]) -> [Date?] {
         let now = Date()
         let cal = Calendar.current
@@ -138,6 +209,12 @@ struct JourneyScreen: View {
             if index < tracker.currentStopIndex { return .passed }
             if index == tracker.currentStopIndex { return .current }
             if index == tracker.nextStopIndex { return .next }
+            return .upcoming
+        }
+        if let trustIdx = trustCurrentIndex {
+            if index < trustIdx { return .passed }
+            if index == trustIdx { return .current }
+            if index == trustIdx + 1 { return .next }
             return .upcoming
         }
         let currentIdx = inferredCurrentStopIndex
@@ -233,7 +310,7 @@ struct JourneyScreen: View {
         }
 
         if let rid = train.rid {
-            let resp = try? await APIClient.shared.getMovements(rid: rid)
+            let resp = try? await APIClient.shared.getMovements(rid: rid, uid: train.uid)
             if let events = resp?.movements, !events.isEmpty {
                 movements = events.sorted { $0.actualTimestamp > $1.actualTimestamp }
             }
@@ -822,7 +899,8 @@ struct JourneyScreen: View {
                                 isFirst: index == 0,
                                 isLast: index == displayedStops.count - 1,
                                 accent: accent,
-                                trackingState: trackingState(for: index)
+                                trackingState: trackingState(for: index),
+                                trustInfo: trustInfoForStop(stop)
                             )
                         }
                     }
@@ -907,12 +985,20 @@ enum StopTrackingState {
     case upcoming
 }
 
+struct TRUSTStopInfo {
+    let actualTime: String
+    let delayMinutes: Int
+    let hasDeparted: Bool
+    let hasArrived: Bool
+}
+
 private struct StopRow: View {
     let stop: Stop
     let isFirst: Bool
     let isLast: Bool
     let accent: Color
     var trackingState: StopTrackingState = .notTracking
+    var trustInfo: TRUSTStopInfo? = nil
 
     private var isEndpoint: Bool {
         stop.type == .origin || stop.type == .destination
@@ -1033,13 +1119,32 @@ private struct StopRow: View {
 
     private var timeColumn: some View {
         VStack(alignment: .trailing, spacing: 2) {
-            HStack(spacing: 5) {
-                Text(displayTime)
-                    .font(.mono(14, weight: .medium))
-                    .tracking(-0.1)
-                    .foregroundStyle(timeColor)
-                if !showsActualTime, let delay = stop.delayMinutes, delay != 0 {
-                    DelayChip(minutes: delay)
+            if let trust = trustInfo {
+                HStack(spacing: 5) {
+                    Text(trust.actualTime)
+                        .font(.mono(14, weight: .medium))
+                        .tracking(-0.1)
+                        .foregroundStyle(trust.delayMinutes > 0 ? Theme.delayedText : Theme.ink)
+                    if trust.delayMinutes != 0 {
+                        DelayChip(minutes: trust.delayMinutes)
+                    }
+                }
+                if trust.actualTime != stop.time {
+                    Text(stop.time)
+                        .font(.mono(11))
+                        .tracking(-0.1)
+                        .foregroundStyle(Theme.inkMute)
+                        .strikethrough(color: Theme.inkMute)
+                }
+            } else {
+                HStack(spacing: 5) {
+                    Text(displayTime)
+                        .font(.mono(14, weight: .medium))
+                        .tracking(-0.1)
+                        .foregroundStyle(timeColor)
+                    if !showsActualTime, let delay = stop.delayMinutes, delay != 0 {
+                        DelayChip(minutes: delay)
+                    }
                 }
             }
             if !stopStatusLabel.isEmpty {
@@ -1083,7 +1188,11 @@ private struct StopRow: View {
             return stop.type == .destination ? "ARRIVED" : "DEPARTED"
         }
         if isCurrent {
-            return stop.type == .destination ? "ARRIVED" : "DEPARTED"
+            if stop.type == .destination { return "ARRIVED" }
+            if let trust = trustInfo, trust.hasArrived && !trust.hasDeparted {
+                return "AT STATION"
+            }
+            return "DEPARTED"
         }
         switch stop.type {
         case .origin, .destination: return ""
