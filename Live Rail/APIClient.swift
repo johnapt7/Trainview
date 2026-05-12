@@ -82,11 +82,28 @@ final class APIClient {
 
     // MARK: - Board (Departures / Arrivals)
 
-    func getBoard(crs: String, type: String = "departures", rows: Int = 15) async throws -> BoardResponse {
-        try await request("/board/\(crs)", queryItems: [
+    func getBoard(crs: String, type: String = "departures", rows: Int = 15, filterCrs: String? = nil, timeOffset: Int? = nil) async throws -> BoardResponse {
+        var items = [
             URLQueryItem(name: "type", value: type),
             URLQueryItem(name: "rows", value: "\(rows)"),
-        ])
+        ]
+        if let filterCrs { items.append(URLQueryItem(name: "filterCrs", value: filterCrs)) }
+        if let timeOffset, timeOffset != 0 { items.append(URLQueryItem(name: "timeOffset", value: "\(timeOffset)")) }
+        return try await request("/board/\(crs)", queryItems: items)
+    }
+
+    // MARK: - Fastest Departures
+
+    func getFastestDepartures(
+        from crs: String,
+        to destinations: [String],
+        timeOffset: Int? = nil
+    ) async throws -> FastestDeparturesResponse {
+        var items = [URLQueryItem(name: "to", value: destinations.joined(separator: ","))]
+        if let timeOffset, timeOffset != 0 {
+            items.append(URLQueryItem(name: "timeOffset", value: "\(timeOffset)"))
+        }
+        return try await request("/board/\(crs)/fastest", queryItems: items)
     }
 
     // MARK: - Service Details
@@ -126,6 +143,28 @@ final class APIClient {
         try await request("/stations/crs/\(crs)")
     }
 
+    // MARK: - Station Coordinates (batch)
+
+    func getStationCoordinates(crsCodes: [String]) async -> [String: (lat: Double, lng: Double)] {
+        await withTaskGroup(of: (String, Double, Double)?.self) { group in
+            for crs in Set(crsCodes) {
+                group.addTask {
+                    guard let station = try? await self.getStation(crs: crs),
+                          let lat = station.latitude,
+                          let lng = station.longitude else { return nil }
+                    return (crs, lat, lng)
+                }
+            }
+            var result: [String: (lat: Double, lng: Double)] = [:]
+            for await entry in group {
+                if let (crs, lat, lng) = entry {
+                    result[crs] = (lat, lng)
+                }
+            }
+            return result
+        }
+    }
+
     // MARK: - HSP Metrics
 
     func getHSPMetrics(origin: String, destination: String, days: Int = 5) async throws -> HSPMetricsResponse {
@@ -151,5 +190,21 @@ final class APIClient {
         try await request("/intelligence/reliability/\(origin)/\(destination)", queryItems: [
             URLQueryItem(name: "days", value: "\(days)"),
         ])
+    }
+
+    // MARK: - Disruptions
+
+    func getTOCIndicators() async throws -> TOCIndicatorsResponse {
+        try await request("/disruptions/tocs")
+    }
+
+    func getStationDisruptions(crs: String) async throws -> StationDisruptionsResponse {
+        try await request("/disruptions/stations/\(crs)")
+    }
+
+    // MARK: - Movements
+
+    func getMovements(rid: String) async throws -> MovementsResponse {
+        try await request("/movements/\(rid)")
     }
 }

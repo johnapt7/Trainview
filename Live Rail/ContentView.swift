@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var screen: AppScreen = .welcome
     @State private var activeTrain: Train?
     @State private var activeStation: Station = Station(code: "KGX", name: "King's Cross")
+    @State private var tracker = TrainTracker()
 
     private let accent = Theme.accent
 
@@ -50,7 +51,7 @@ struct ContentView: View {
                 )
             case .journey:
                 if let train = activeTrain {
-                    JourneyScreen(train: train, accent: accent) {
+                    JourneyScreen(train: train, boardingStation: activeStation, accent: accent, tracker: tracker) {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             screen = .departures
                         }
@@ -63,6 +64,18 @@ struct ContentView: View {
         .onAppear {
             if hasSeenWelcome {
                 screen = .home
+            }
+        }
+        .onOpenURL { url in
+            guard url.scheme == "liverail",
+                  url.host == "journey",
+                  let train = tracker.trackedTrain else { return }
+            activeTrain = train
+            if let boarding = tracker.boardingStation {
+                activeStation = boarding
+            }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                screen = .journey
             }
         }
     }

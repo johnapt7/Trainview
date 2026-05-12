@@ -10,10 +10,15 @@ struct HomeScreen: View {
     @State private var searchError: Bool = false
     @State private var searchTask: Task<Void, Never>?
     @State private var nearbyStations: [Station] = []
-    @State private var nearbyLoaded = false
+    @State private var nearbyDidLoad = false
+    @State private var nearbyError = false
+    @State private var nearbyTask: Task<Void, Never>?
     @State private var locationManager = LocationManager()
     @State private var recentStore = RecentStationsStore()
     @State private var favouriteStore = FavouriteStationsStore()
+    @State private var showFAQ = false
+    @State private var tocIndicators: [TOCIndicator] = []
+    @State private var showNetworkStatus = false
     @FocusState private var searchFocused: Bool
 
     private var greeting: String {
@@ -30,28 +35,34 @@ struct HomeScreen: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 0) {
-                headerSection
-                if let results = searchResults {
-                    searchResultsSection(results)
-                } else {
-                    if !favouriteStore.stations.isEmpty {
-                        favouritesSection
+        VStack(spacing: 0) {
+            pinnedTopBar
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    headerSection
+                    if !tocIndicators.isEmpty {
+                        networkStatusRow
                     }
-                    nearbySection
-                    if !recentStore.stations.isEmpty {
-                        recentSection
+                    if let results = searchResults {
+                        searchResultsSection(results)
+                    } else {
+                        if !favouriteStore.stations.isEmpty {
+                            favouritesSection
+                        }
+                        nearbySection
+                        if !recentStore.stations.isEmpty {
+                            recentSection
+                        }
                     }
+                    footerView
                 }
-                footerView
             }
         }
         .background(Theme.cream)
         .task {
             if locationManager.hasPermission {
                 if let coord = locationManager.location {
-                    if !nearbyLoaded {
+                    if !nearbyDidLoad {
                         fetchNearby(lat: coord.latitude, lng: coord.longitude)
                     }
                 } else {
@@ -62,12 +73,21 @@ struct HomeScreen: View {
             }
         }
         .onChange(of: locationManager.location) { _, coord in
-            if let coord, !nearbyLoaded {
+            if let coord, !nearbyDidLoad {
                 fetchNearby(lat: coord.latitude, lng: coord.longitude)
             }
         }
         .onChange(of: query) { _, newValue in
             debounceSearch(newValue)
+        }
+        .sheet(isPresented: $showFAQ) {
+            FAQSheet()
+        }
+        .sheet(isPresented: $showNetworkStatus) {
+            NetworkStatusSheet(indicators: tocIndicators)
+        }
+        .task {
+            tocIndicators = (try? await APIClient.shared.getTOCIndicators())?.indicators ?? []
         }
     }
 
@@ -98,17 +118,33 @@ struct HomeScreen: View {
     }
 
     private func fetchNearby(lat: Double, lng: Double) {
-        Task {
+        nearbyTask?.cancel()
+        nearbyError = false
+        nearbyTask = Task {
             do {
                 let wrapper = try await APIClient.shared.getNearbyStations(lat: lat, lng: lng, limit: 5)
+                guard !Task.isCancelled else { return }
                 withAnimation(.easeOut(duration: 0.3)) {
                     nearbyStations = (wrapper.stations ?? []).map { Station(from: $0) }
-                    nearbyLoaded = true
+                    nearbyDidLoad = true
+                    nearbyError = false
                 }
+            } catch is CancellationError {
+                return
             } catch {
+                guard !Task.isCancelled else { return }
                 nearbyStations = []
-                nearbyLoaded = true
+                nearbyDidLoad = false
+                nearbyError = true
             }
+        }
+    }
+
+    private func retryNearby() {
+        if let coord = locationManager.location {
+            fetchNearby(lat: coord.latitude, lng: coord.longitude)
+        } else {
+            locationManager.requestLocation()
         }
     }
 
@@ -119,15 +155,28 @@ struct HomeScreen: View {
 
     // MARK: - Header
 
-    private var headerSection: some View {
-        VStack(spacing: 0) {
+    /// Sits outside the ScrollView so it stays visible while content scrolls
+    /// underneath, and clears the status bar / Dynamic Island via the top
+    /// padding (matching the offset used elsewhere in the app).
+    private var pinnedTopBar: some View {
+        HStack {
+            Color.clear.frame(width: 38, height: 38)
+            Spacer()
             Text("RAIL BOARD")
                 .font(.mono(11, weight: .semibold))
                 .tracking(2)
                 .foregroundStyle(Theme.ink)
-                .padding(.top, 6)
-                .padding(.bottom, 18)
+            Spacer()
+            IconButton(systemName: "info.circle", size: 14) { showFAQ = true }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 62)
+        .padding(.bottom, 10)
+        .background(Theme.cream)
+    }
 
+    private var headerSection: some View {
+        VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 Text(greeting.uppercased())
                     .font(.mono(11))
@@ -139,12 +188,12 @@ struct HomeScreen: View {
                     .lineSpacing(-4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 10)
             .padding(.bottom, 22)
 
             searchBar
         }
         .padding(.horizontal, 18)
-        .padding(.top, 6)
     }
 
     private var searchBar: some View {
@@ -293,7 +342,9 @@ struct HomeScreen: View {
 
             if !locationManager.hasPermission {
                 locationPrompt
-            } else if nearbyStations.isEmpty && !nearbyLoaded {
+            } else if nearbyError {
+                nearbyErrorCard
+            } else if !nearbyDidLoad {
                 loadingCard
             } else if nearbyStations.isEmpty {
                 VStack(spacing: 4) {
@@ -353,6 +404,36 @@ struct HomeScreen: View {
             Text("Finding nearby stations...")
                 .font(.ui(13))
                 .foregroundStyle(Theme.inkSoft)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var nearbyErrorCard: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 18))
+                .foregroundStyle(Theme.inkMute)
+                .padding(.bottom, 2)
+            Text("Couldn't load nearby stations")
+                .font(.display(18))
+            Text("Check your connection and try again")
+                .font(.ui(11))
+                .foregroundStyle(Theme.inkMute)
+            Button {
+                retryNearby()
+            } label: {
+                Text("Try again")
+                    .font(.ui(13, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .background(accent)
+                    .clipShape(Capsule())
+            }
+            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
@@ -446,6 +527,41 @@ struct HomeScreen: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
+    // MARK: - Network Status
+
+    private var disruptedCount: Int {
+        tocIndicators.filter { $0.status != "Good service" }.count
+    }
+
+    private var networkStatusRow: some View {
+        Button { showNetworkStatus = true } label: {
+            HStack(spacing: 10) {
+                Image(systemName: disruptedCount > 0 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(disruptedCount > 0 ? Theme.delayedText : Theme.perfGood)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(disruptedCount > 0 ? "\(disruptedCount) operator\(disruptedCount == 1 ? "" : "s") disrupted" : "All operators running normally")
+                        .font(.ui(13, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                    Text("Network status")
+                        .font(.mono(10, weight: .medium))
+                        .tracking(0.3)
+                        .foregroundStyle(Theme.inkMute)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.inkMute)
+            }
+            .padding(14)
+            .background(disruptedCount > 0 ? Theme.warn.opacity(0.25) : Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 18)
+        .padding(.top, 20)
+    }
+
     // MARK: - Footer
 
     private var footerView: some View {
@@ -458,5 +574,123 @@ struct HomeScreen: View {
         }
         .padding(.top, 28)
         .padding(.bottom, 6)
+    }
+}
+
+// MARK: - Network Status Sheet
+
+struct NetworkStatusSheet: View {
+    let indicators: [TOCIndicator]
+    @Environment(\.dismiss) private var dismiss
+
+    private var disrupted: [TOCIndicator] {
+        indicators.filter { $0.status != "Good service" }
+    }
+
+    private var healthy: [TOCIndicator] {
+        indicators.filter { $0.status == "Good service" }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(spacing: 8) {
+                        Text("\(indicators.count)")
+                            .font(.display(42))
+                            .tracking(-1)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("operators")
+                            Text("tracked")
+                        }
+                        .font(.mono(11))
+                        .tracking(0.8)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.inkSoft)
+                        Spacer()
+                        if !disrupted.isEmpty {
+                            Text("\(disrupted.count) disrupted")
+                                .font(.mono(11, weight: .semibold))
+                                .tracking(0.4)
+                                .foregroundStyle(Theme.delayedText)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Theme.warn.opacity(0.3))
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.horizontal, 18)
+
+                    if !disrupted.isEmpty {
+                        tocSection("Disruptions", tocs: disrupted, showDescription: true)
+                    }
+
+                    tocSection("Good service", tocs: healthy, showDescription: false)
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 40)
+            }
+            .background(Theme.cream)
+            .navigationTitle("Network Status")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .font(.ui(14, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                }
+            }
+        }
+    }
+
+    private func tocSection(_ title: String, tocs: [TOCIndicator], showDescription: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(.mono(10, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(Theme.inkMute)
+                .padding(.horizontal, 18)
+
+            VStack(spacing: 0) {
+                ForEach(Array(tocs.enumerated()), id: \.element.tocCode) { index, toc in
+                    let brand = OperatorBrand.brand(for: toc.tocCode)
+                    HStack(spacing: 10) {
+                        Text(toc.tocCode)
+                            .font(.mono(9, weight: .bold))
+                            .tracking(0.5)
+                            .foregroundStyle(brand.fg)
+                            .frame(width: 32, height: 26)
+                            .background(brand.bg)
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(toc.tocName)
+                                .font(.ui(13, weight: .semibold))
+                                .foregroundStyle(Theme.ink)
+                                .lineLimit(1)
+                            if showDescription {
+                                Text(toc.statusDescription)
+                                    .font(.ui(11))
+                                    .foregroundStyle(Theme.inkSoft)
+                                    .lineLimit(2)
+                            }
+                        }
+                        Spacer()
+                        Circle()
+                            .fill(toc.status == "Good service" ? Theme.perfGood : Theme.delayedText)
+                            .frame(width: 7, height: 7)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .overlay(alignment: .bottom) {
+                        if index < tocs.count - 1 {
+                            Divider().overlay(Theme.line)
+                        }
+                    }
+                }
+            }
+            .background(Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 18)
+        }
     }
 }

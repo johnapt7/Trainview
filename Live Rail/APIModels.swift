@@ -20,6 +20,7 @@ struct BoardService: Codable, Identifiable {
     let scheduledTime: String
     let expectedTime: String
     let platform: String?
+    let predictedPlatform: PredictedPlatform?
     let `operator`: String
     let operatorCode: String
     let destination: String
@@ -33,6 +34,9 @@ struct BoardService: Codable, Identifiable {
     let serviceId: String
     let length: Int?
     let status: String
+    let rid: String?
+    let uid: String?
+    let headcode: String?
 }
 
 // MARK: - Platform Prediction
@@ -43,6 +47,28 @@ struct PredictedPlatform: Codable {
     let source: String
     let observationCount: Int?
     let lastObserved: String?
+}
+
+// MARK: - Fastest Departures
+
+struct FastestDeparturesResponse: Codable {
+    let generatedAt: String
+    let stationName: String
+    let stationCrs: String
+    let platformsAvailable: Bool
+    let nrccMessages: [String]?
+    let results: [FastestDeparturesResult]
+}
+
+struct FastestDeparturesResult: Codable, Identifiable {
+    var id: String { destinationCrs }
+
+    let destinationCrs: String
+    let destinationName: String
+    let service: BoardService?
+    let callingPoints: [CallingPointResponse]
+    let unavailable: Bool?
+    let unavailableReason: String?
 }
 
 // MARK: - Service Details
@@ -183,6 +209,73 @@ struct ReliabilityStats: Codable {
     let avgDelayMinutes: Double
     let period: String
     let generatedAt: String
+}
+
+// MARK: - Disruptions (TOC-level)
+
+struct TOCIndicatorsResponse: Codable {
+    let generatedAt: String
+    let indicators: [TOCIndicator]
+}
+
+struct TOCIndicator: Codable, Identifiable {
+    var id: String { tocCode }
+
+    let tocCode: String
+    let tocName: String
+    let status: String
+    let statusDescription: String
+    let additionalInfo: String?
+}
+
+// MARK: - Disruptions (Station-level)
+
+struct StationDisruptionsResponse: Codable {
+    let crs: String
+    let stationName: String
+    let disruptions: [StationDisruption]
+}
+
+struct StationDisruption: Codable, Identifiable {
+    let id: String
+    let type: String
+    let severity: String
+    let title: String
+    let description: String
+    let category: String
+    let affectedOperators: [String]
+    let validFrom: String
+    let customerAdvice: String?
+}
+
+// MARK: - Movements (TRUST)
+
+struct MovementsResponse: Codable {
+    let rid: String?
+    let count: Int?
+    let movements: [MovementEvent]?
+    let error: Bool?
+    let code: String?
+    let message: String?
+}
+
+struct MovementEvent: Codable, Identifiable {
+    var id: String { "\(rid)-\(eventType)-\(tiploc)-\(actualTimestamp)" }
+
+    let rid: String
+    let headcode: String
+    let uid: String
+    let eventType: String
+    let actualTimestamp: String
+    let plannedTimestamp: String
+    let variationSeconds: Int
+    let variationStatus: String
+    let stanox: String
+    let tiploc: String
+    let crs: String?
+    let platform: String?
+    let toc: String
+    let recordedAt: String
 }
 
 // MARK: - API Error
