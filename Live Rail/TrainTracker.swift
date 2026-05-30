@@ -20,6 +20,7 @@ final class TrainTracker {
     private var stopTimes: [Date?] = []
     private var pollingTask: Task<Void, Never>?
     private var activity: Activity<TrainTrackingAttributes>?
+    private let notificationManager = TrainNotificationManager()
 
     func startTracking(train: Train, stops: [Stop], boardingStation: Station) {
         trackedTrain = train
@@ -30,6 +31,8 @@ final class TrainTracker {
         isTracking = true
         recalculatePosition()
         startLiveActivity(train: train, stops: stops)
+        notificationManager.configure(train: train, boardingStation: boardingStation)
+        Task { await notificationManager.requestPermissionIfNeeded() }
         startPolling()
     }
 
@@ -43,6 +46,7 @@ final class TrainTracker {
         stopTimes = []
         movements = []
         lastPolled = nil
+        notificationManager.reset()
         endLiveActivity()
     }
 
@@ -100,15 +104,18 @@ final class TrainTracker {
         }
 
         if lastPassedIndex < 0 {
-            for (i, time) in stopTimes.enumerated() {
-                guard let t = time else { continue }
-                if now >= t { lastPassedIndex = i }
+            let hasConfirmedDeparture = trackedStops.contains { $0.hasDeparted }
+            if hasConfirmedDeparture {
+                for (i, time) in stopTimes.enumerated() {
+                    guard let t = time else { continue }
+                    if now >= t { lastPassedIndex = i }
+                }
             }
         }
 
         if lastPassedIndex < 0 {
             currentStopIndex = 0
-            nextStopIndex = 0
+            nextStopIndex = min(1, trackedStops.count - 1)
             progressBetweenStops = 0
             overallProgress = 0
         } else if lastPassedIndex >= trackedStops.count - 1 {
@@ -145,9 +152,23 @@ final class TrainTracker {
         return stop.time
     }
 
-    private static func isClockTime(_ s: String) -> Bool {
+    static func isClockTime(_ s: String) -> Bool {
         let parts = s.split(separator: ":")
         return parts.count == 2 && Int(parts[0]) != nil && Int(parts[1]) != nil
+    }
+
+    static func timeHasPassed(_ timeStr: String) -> Bool {
+        let now = Date()
+        let cal = Calendar.current
+        let parts = timeStr.split(separator: ":")
+        guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]) else { return false }
+        var c = cal.dateComponents([.year, .month, .day], from: now)
+        c.hour = h
+        c.minute = m
+        c.second = 0
+        guard let target = cal.date(from: c) else { return false }
+        if target.timeIntervalSince(now) > 6 * 3600 { return false }
+        return target < now
     }
 
     private static func parseStopTimes(_ stops: [Stop]) -> [Date?] {
@@ -227,6 +248,12 @@ final class TrainTracker {
             let boardExpected = isTerminus
                 ? details.expectedArrival
                 : details.expectedDeparture
+            let boardDeparted: Bool = {
+                if isTerminus { return false }
+                if !details.previousCallingPoints.isEmpty { return true }
+                let depTime = boardExpected ?? boardTime
+                return TrainTracker.timeHasPassed(depTime)
+            }()
             updatedStops.append(Stop(
                 station: boarding.name,
                 crs: boarding.code,
@@ -234,7 +261,7 @@ final class TrainTracker {
                 expectedTime: boardExpected,
                 platform: details.platform ?? train.platform,
                 type: .stop,
-                hasDeparted: !details.previousCallingPoints.isEmpty && !isTerminus
+                hasDeparted: boardDeparted
             ))
         }
 
@@ -276,6 +303,19 @@ final class TrainTracker {
         } else {
             trainStatus = .onTime
         }
+
+        let boardingHasDeparted = updatedStops.first { $0.crs == boardingStation?.code }?.hasDeparted ?? false
+        let confirmedPlatform = details.platform
+        let isPredicted = confirmedPlatform == nil && details.predictedPlatform != nil
+        let platformToReport = confirmedPlatform ?? details.predictedPlatform?.platform
+        notificationManager.evaluateChanges(
+            platform: platformToReport,
+            isPredictedPlatform: isPredicted,
+            expectedDeparture: details.expectedDeparture,
+            scheduledDeparture: details.scheduledDeparture ?? train.time,
+            isCancelled: details.isCancelled,
+            hasDepartedBoardingStation: boardingHasDeparted
+        )
 
         if let rid = train.rid {
             let resp = try? await APIClient.shared.getMovements(rid: rid, uid: train.uid)
@@ -349,14 +389,23 @@ final class TrainTracker {
             return (p.isEmpty || p == "—") ? nil : p
         }()
 
+        let currentName: String = {
+            guard currentStopIndex >= 0, currentStopIndex < trackedStops.count else { return "" }
+            return trackedStops[currentStopIndex].station
+        }()
+
+        let departed = trackedStops.contains { $0.hasDeparted }
+
         return TrainTrackingAttributes.ContentState(
             currentStopIndex: currentStopIndex,
+            currentStopName: currentName,
             nextStopName: nextStopName,
             nextStopExpectedTime: nextStopExpectedTime,
             nextStopPlatform: nextPlatform,
             nextStopDelayMinutes: nextStop?.delayMinutes,
             platform: trackedTrain?.platform ?? "—",
             status: trainStatus.rawValue,
+            hasDeparted: departed,
             progressFraction: overallProgress,
             previousStopDepartureDate: previousStopDepartureDate,
             nextStopArrivalDate: nextStopArrivalDate,

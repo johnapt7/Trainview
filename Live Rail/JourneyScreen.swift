@@ -101,6 +101,8 @@ struct JourneyScreen: View {
     }
 
     private var inferredCurrentStopIndex: Int {
+        let hasConfirmedDeparture = stops.contains { $0.hasDeparted }
+        guard hasConfirmedDeparture else { return -1 }
         let now = Date()
         var lastPassed = -1
         for (i, t) in stopTimes.enumerated() {
@@ -251,6 +253,12 @@ struct JourneyScreen: View {
             let boardingExpected = boardingIsTerminal
                 ? response.expectedArrival
                 : response.expectedDeparture
+            let boardingDeparted: Bool = {
+                if boardingIsTerminal { return false }
+                if !response.previousCallingPoints.isEmpty { return true }
+                let depTime = boardingExpected ?? boardingTime
+                return TrainTracker.timeHasPassed(depTime)
+            }()
             allStops.append(Stop(
                 station: boardingStation.name,
                 crs: boardingStation.code,
@@ -258,7 +266,7 @@ struct JourneyScreen: View {
                 expectedTime: boardingExpected,
                 platform: response.platform ?? train.platform,
                 type: .stop,
-                hasDeparted: !response.previousCallingPoints.isEmpty && !boardingIsTerminal
+                hasDeparted: boardingDeparted
             ))
 
             // All subsequentCallingPoints.
@@ -1192,6 +1200,7 @@ private struct StopRow: View {
             if let trust = trustInfo, trust.hasArrived && !trust.hasDeparted {
                 return "AT STATION"
             }
+            if stop.type == .origin && !stop.hasDeparted { return "BOARDING" }
             return "DEPARTED"
         }
         switch stop.type {
@@ -1270,7 +1279,7 @@ private struct LiveTrackingStrip: View {
     private var destinationStop: Stop? { tracker.trackedStops.last }
 
     private var atOrigin: Bool {
-        tracker.currentStopIndex == tracker.nextStopIndex && tracker.overallProgress == 0
+        tracker.currentStopIndex == 0 && tracker.overallProgress == 0
     }
 
     private var atTerminus: Bool {

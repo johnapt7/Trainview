@@ -22,60 +22,57 @@ struct TrainTrackingLiveActivity: Widget {
                     statusDot(context.state.status)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 10) {
-                        HStack(alignment: .bottom) {
+                    let atTerminus = context.state.progressFraction >= 1.0
+                    VStack(spacing: 8) {
+                        HStack(alignment: .top, spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(context.attributes.origin)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .lineLimit(1)
-                                Text(context.attributes.scheduledDeparture)
-                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                Text(context.state.hasDeparted ? "FROM" : "DEPARTING")
+                                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                                    .tracking(0.8)
                                     .foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 8)
-                            Image(systemName: "arrow.right")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                            Spacer(minLength: 8)
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text(context.attributes.destination)
-                                    .font(.system(size: 14, weight: .semibold))
+                                Text(context.state.currentStopName)
+                                    .font(.system(size: 12, weight: .semibold))
                                     .lineLimit(1)
-                                HStack(spacing: 3) {
-                                    if let eta = context.state.destinationArrivalDate {
-                                        Text(eta, style: .time)
-                                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                            .monospacedDigit()
-                                    } else {
-                                        Text(context.attributes.scheduledArrival)
-                                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                    }
-                                    if let d = context.state.destinationDelayMinutes, d != 0 {
-                                        WidgetDelayChip(minutes: d)
-                                    }
-                                }
-                                .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 4)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(atTerminus ? "ARRIVED" : "NEXT")
+                                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                                    .tracking(0.8)
+                                    .foregroundStyle(.secondary)
+                                Text(context.state.nextStopName)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .lineLimit(1)
                             }
                         }
 
                         progressBar(for: context.state)
 
                         HStack {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.right.circle.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
-                                Text(context.state.nextStopName)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .lineLimit(1)
-                            }
-                            Spacer(minLength: 8)
-                            HStack(spacing: 4) {
-                                if let d = context.state.nextStopDelayMinutes, d != 0 {
-                                    WidgetDelayChip(minutes: d)
-                                }
+                            if atTerminus {
+                                Text("Arrived")
+                                    .font(.system(size: 11, weight: .semibold))
+                            } else if !context.state.hasDeparted {
+                                Text("Boarding · \(context.attributes.scheduledDeparture)")
+                                    .font(.system(size: 11, weight: .semibold))
+                            } else {
                                 countdownLabel(for: context.state)
                             }
+                            Spacer(minLength: 8)
+                            HStack(spacing: 3) {
+                                if let d = context.state.destinationDelayMinutes, d != 0 {
+                                    WidgetDelayChip(minutes: d)
+                                }
+                                if let eta = context.state.destinationArrivalDate {
+                                    Text(eta, style: .time)
+                                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                        .monospacedDigit()
+                                } else {
+                                    Text(context.attributes.scheduledArrival)
+                                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                }
+                            }
+                            .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -84,7 +81,12 @@ struct TrainTrackingLiveActivity: Widget {
                     .font(.system(size: 13))
                     .foregroundStyle(statusColor(context.state.status))
             } compactTrailing: {
-                compactCountdown(for: context.state)
+                if context.state.hasDeparted {
+                    compactCountdown(for: context.state)
+                } else {
+                    Text(context.attributes.scheduledDeparture)
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                }
             } minimal: {
                 Image(systemName: "tram.fill")
                     .font(.system(size: 12))
@@ -95,9 +97,10 @@ struct TrainTrackingLiveActivity: Widget {
 
     @ViewBuilder
     private func lockScreenView(context: ActivityViewContext<TrainTrackingAttributes>) -> some View {
+        let atTerminus = context.state.progressFraction >= 1.0
         VStack(spacing: 12) {
             HStack {
-                VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
                     Text(context.attributes.operatorCode)
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .tracking(0.5)
@@ -108,80 +111,118 @@ struct TrainTrackingLiveActivity: Widget {
                     Text(context.attributes.operatorName)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 Spacer()
                 statusBadge(context.state.status)
             }
 
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(context.attributes.scheduledDeparture)
-                        .font(.system(size: 20, weight: .medium, design: .monospaced))
-                    Text(context.attributes.origin)
-                        .font(.system(size: 12))
-                        .lineLimit(1)
-                }
-                Spacer()
-                VStack(spacing: 2) {
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Text("\(context.attributes.totalStops) stops")
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 1) {
-                    HStack(spacing: 4) {
-                        if let eta = context.state.destinationArrivalDate {
-                            Text(eta, style: .time)
-                                .font(.system(size: 20, weight: .medium, design: .monospaced))
-                        } else {
-                            Text(context.attributes.scheduledArrival)
-                                .font(.system(size: 20, weight: .medium, design: .monospaced))
-                        }
-                        if let d = context.state.destinationDelayMinutes, d != 0 {
-                            WidgetDelayChip(minutes: d)
-                        }
-                    }
-                    Text(context.attributes.destination)
-                        .font(.system(size: 12))
-                        .lineLimit(1)
-                }
+            HStack(alignment: .top, spacing: 12) {
+                stopColumn(
+                    label: context.state.hasDeparted ? "DEPARTED FROM" : "DEPARTING FROM",
+                    name: context.state.currentStopName,
+                    time: nil,
+                    platform: context.state.hasDeparted ? nil : context.state.platform,
+                    delayMinutes: nil,
+                    trailing: false
+                )
+                stopColumn(
+                    label: atTerminus ? "ARRIVED AT" : "NEXT STOP",
+                    name: context.state.nextStopName,
+                    time: context.state.nextStopExpectedTime,
+                    platform: context.state.nextStopPlatform,
+                    delayMinutes: context.state.nextStopDelayMinutes,
+                    trailing: true
+                )
             }
 
-            VStack(spacing: 6) {
-                progressBar(for: context.state)
-                HStack(alignment: .center) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                        Text(context.state.nextStopName)
-                            .font(.system(size: 12, weight: .medium))
-                            .lineLimit(1)
-                        Text(context.state.nextStopExpectedTime)
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                        if let d = context.state.nextStopDelayMinutes, d != 0 {
-                            WidgetDelayChip(minutes: d)
-                        }
-                        if let p = context.state.nextStopPlatform {
-                            Text("Plat \(p)")
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(.white.opacity(0.1))
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                    }
-                    Spacer()
-                    countdownLabel(for: context.state)
+            progressBar(for: context.state)
+
+            sentenceFooter(context: context, atTerminus: atTerminus)
+        }
+        .padding(16)
+    }
+
+    @ViewBuilder
+    private func stopColumn(label: String, name: String, time: String?, platform: String?, delayMinutes: Int?, trailing: Bool) -> some View {
+        VStack(alignment: trailing ? .trailing : .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .tracking(1.0)
+                .foregroundStyle(.secondary)
+            Text(name)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+            HStack(spacing: 4) {
+                if let time, !time.isEmpty {
+                    Text(time)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                if let d = delayMinutes, d != 0 {
+                    WidgetDelayChip(minutes: d)
+                }
+                if let p = platform, !p.isEmpty, p != "—" {
+                    Text("Plat \(p)")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(.white.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
             }
         }
-        .padding(16)
+        .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
+    }
+
+    @ViewBuilder
+    private func sentenceFooter(context: ActivityViewContext<TrainTrackingAttributes>, atTerminus: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if atTerminus {
+                Text("Arrived at \(context.state.nextStopName)")
+                    .font(.system(size: 14, weight: .semibold))
+            } else if !context.state.hasDeparted {
+                Text("Boarding · departs \(context.attributes.scheduledDeparture)")
+                    .font(.system(size: 14, weight: .semibold))
+            } else if let arrival = context.state.nextStopArrivalDate {
+                let remaining = arrival.timeIntervalSinceNow
+                if remaining < 30 && remaining > -120 {
+                    Text("Approaching \(context.state.nextStopName)")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(statusColor(context.state.status))
+                } else if remaining > 0 {
+                    Text("Arrives at \(context.state.nextStopName) in \(formatRemaining(remaining))")
+                        .font(.system(size: 14, weight: .semibold))
+                } else {
+                    Text("Due now at \(context.state.nextStopName)")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+            }
+
+            if !atTerminus {
+                HStack(spacing: 4) {
+                    if let d = context.state.destinationDelayMinutes, d > 0 {
+                        Text("+\(d) min late")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.orange)
+                    }
+                    Text("Due \(context.attributes.destination)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    if let eta = context.state.destinationArrivalDate {
+                        Text(eta, style: .time)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(context.attributes.scheduledArrival)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

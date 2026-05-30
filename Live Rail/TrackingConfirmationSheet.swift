@@ -46,7 +46,7 @@ struct TrackingConfirmationSheet: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 featureRow(icon: "location.fill", text: "See which stop the train is at in real time")
-                featureRow(icon: "bell.fill", text: "Updates every 30 seconds with latest data")
+                featureRow(icon: "bell.fill", text: "Notifies you of platform changes, delays, and cancellations")
                 featureRow(icon: "rectangle.stack.fill", text: "Track from the lock screen with Live Activity")
             }
             .padding(16)

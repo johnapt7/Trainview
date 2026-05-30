@@ -13,12 +13,14 @@ struct TrainTrackingAttributes: ActivityAttributes {
 
     struct ContentState: Codable, Hashable {
         let currentStopIndex: Int
+        let currentStopName: String
         let nextStopName: String
         let nextStopExpectedTime: String
         let nextStopPlatform: String?
         let nextStopDelayMinutes: Int?
         let platform: String
         let status: String
+        let hasDeparted: Bool
         let progressFraction: Double
         let previousStopDepartureDate: Date?
         let nextStopArrivalDate: Date?
