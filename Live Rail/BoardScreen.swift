@@ -21,6 +21,14 @@ struct BoardScreen: View {
     @State private var favouriteStore = FavouriteStationsStore()
     @State private var stationDisruptions: [StationDisruption] = []
     @State private var disruptionsExpanded = false
+    @State private var liveFeed: StationLiveFeed?
+    @State private var isSilentlyRefreshing = false
+    @State private var lastLoadedAt = Date.distantPast
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// Fallback cadence for the foreground auto-refresh loop. The WebSocket
+    /// feed usually triggers a refresh well before this fires.
+    private static let autoRefreshInterval: TimeInterval = 45
 
     private var fastestDestinations: [Station] {
         favouriteStore.stations.filter { $0.code != station.code }
@@ -101,6 +109,38 @@ struct BoardScreen: View {
         .task {
             await loadBoard()
         }
+        // Foreground auto-refresh: silent reloads so the board tracks platform
+        // changes and delays without a pull. Cancelled whenever the app leaves
+        // the active scene phase; refreshes immediately on return if stale.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            if Date().timeIntervalSince(lastLoadedAt) > 30 {
+                await loadBoard(silent: true)
+            }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.autoRefreshInterval))
+                guard !Task.isCancelled else { break }
+                await loadBoard(silent: true)
+            }
+        }
+        .onAppear {
+            let feed = StationLiveFeed(crs: station.code) {
+                Task { await loadBoard(silent: true) }
+            }
+            liveFeed = feed
+            feed.connect()
+        }
+        .onDisappear {
+            liveFeed?.disconnect()
+            liveFeed = nil
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                liveFeed?.connect()
+            } else {
+                liveFeed?.disconnect()
+            }
+        }
         .onChange(of: mode) { _, _ in
             Task { await loadBoard() }
         }
@@ -117,9 +157,17 @@ struct BoardScreen: View {
 
     // MARK: - Data
 
-    private func loadBoard() async {
-        isLoading = true
-        loadError = nil
+    /// Loads the board. Silent loads (auto-refresh, WebSocket triggers) never
+    /// show the skeleton state and keep the last good board on failure, so a
+    /// network blip mid-refresh doesn't blank a screen the user is reading.
+    private func loadBoard(silent: Bool = false) async {
+        if silent {
+            guard !isSilentlyRefreshing && !isLoading else { return }
+            isSilentlyRefreshing = true
+        } else {
+            isLoading = true
+            loadError = nil
+        }
         do {
             let response = try await APIClient.shared.getBoard(
                 crs: station.code,
@@ -131,6 +179,8 @@ struct BoardScreen: View {
                 services = response.services.map { Train(from: $0) }
                 nrccMessages = response.nrccMessages ?? []
             }
+            loadError = nil
+            lastLoadedAt = Date()
 
             if let disruptions = try? await APIClient.shared.getStationDisruptions(crs: station.code) {
                 let activeOperators = Set(response.services.map(\.operatorCode))
@@ -138,23 +188,40 @@ struct BoardScreen: View {
                     stationDisruptions = disruptions.disruptions.filter { activeOperators.contains($0.id) }
                 }
             }
+            loadCallingPoints(incremental: silent)
         } catch {
-            services = []
-            nrccMessages = []
-            stationDisruptions = []
-            loadError = (error as? APIError)?.errorDescription ?? "Could not load services"
+            if !silent {
+                services = []
+                nrccMessages = []
+                stationDisruptions = []
+                loadError = (error as? APIError)?.errorDescription ?? "Could not load services"
+                loadCallingPoints()
+            }
         }
-        isLoading = false
-        loadCallingPoints()
+        if silent {
+            isSilentlyRefreshing = false
+        } else {
+            isLoading = false
+        }
     }
 
-    private func loadCallingPoints() {
-        for task in callingPointsTasks { task.cancel() }
-        callingPointsTasks.removeAll()
-        callingPoints = [:]
+    /// Incremental mode keeps calling points already on screen and only
+    /// fetches rows new to the board — a silent refresh shouldn't fan out a
+    /// service-details request per visible train every tick.
+    private func loadCallingPoints(incremental: Bool = false) {
+        if incremental {
+            let current = Set(services.map(\.serviceId))
+            callingPoints = callingPoints.filter { current.contains($0.key) }
+            callingPointsTasks.removeAll { $0.isCancelled }
+        } else {
+            for task in callingPointsTasks { task.cancel() }
+            callingPointsTasks.removeAll()
+            callingPoints = [:]
+        }
         let currentMode = mode
         for train in services {
             let serviceId = train.serviceId
+            if incremental && callingPoints[serviceId] != nil { continue }
             let task = Task {
                 guard let details = try? await APIClient.shared.getServiceDetails(serviceId: serviceId) else { return }
                 guard !Task.isCancelled else { return }
