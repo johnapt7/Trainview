@@ -21,6 +21,7 @@ struct TrainTrackingAttributes: ActivityAttributes {
         let platform: String
         let status: String
         let hasDeparted: Bool
+        let isBoarding: Bool
         let progressFraction: Double
         let previousStopDepartureDate: Date?
         let nextStopArrivalDate: Date?

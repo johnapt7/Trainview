@@ -53,7 +53,9 @@ struct TrainTrackingLiveActivity: Widget {
                                 Text("Arrived")
                                     .font(.system(size: 11, weight: .semibold))
                             } else if !context.state.hasDeparted {
-                                Text("Boarding · \(context.attributes.scheduledDeparture)")
+                                Text(context.state.isBoarding
+                                    ? "Boarding · \(context.attributes.scheduledDeparture)"
+                                    : "Departs \(context.attributes.scheduledDeparture)")
                                     .font(.system(size: 11, weight: .semibold))
                             } else {
                                 countdownLabel(for: context.state)
@@ -183,7 +185,9 @@ struct TrainTrackingLiveActivity: Widget {
                 Text("Arrived at \(context.state.nextStopName)")
                     .font(.system(size: 14, weight: .semibold))
             } else if !context.state.hasDeparted {
-                Text("Boarding · departs \(context.attributes.scheduledDeparture)")
+                Text(context.state.isBoarding
+                    ? "Boarding · departs \(context.attributes.scheduledDeparture)"
+                    : "Departs \(context.attributes.scheduledDeparture)")
                     .font(.system(size: 14, weight: .semibold))
             } else if let arrival = context.state.nextStopArrivalDate {
                 let remaining = arrival.timeIntervalSinceNow

@@ -68,6 +68,18 @@ final class TrainTracker {
         stopTimes.last ?? nil
     }
 
+    /// True once the journey hasn't started AND we're close enough to the
+    /// boarding station's departure that "boarding" is meaningful (within
+    /// 15 minutes, or the departure time is unknown/delayed — passengers
+    /// wait at the platform for a delayed start). Before that window the
+    /// train likely isn't even at the platform yet.
+    var isBoarding: Bool {
+        guard !trackedStops.contains(where: { $0.hasDeparted }) else { return false }
+        let idx = trackedStops.firstIndex { $0.crs == boardingStation?.code } ?? 0
+        guard idx < stopTimes.count, let dep = stopTimes[idx] else { return true }
+        return dep.timeIntervalSinceNow <= 15 * 60
+    }
+
     // MARK: - Position Inference
 
     private func recalculatePosition() {
@@ -152,6 +164,39 @@ final class TrainTracker {
         return stop.time
     }
 
+    /// A calling point has verifiably been passed when LDBWS reports an
+    /// actual time for it. Schedule position alone is not evidence — LDBWS
+    /// splits calling points relative to the queried board station, not the
+    /// train's position, so "previous" stops may still be ahead of the train.
+    static func hasBeenPassed(_ cp: CallingPointResponse) -> Bool {
+        guard let at = cp.actualTime else { return false }
+        return isClockTime(at)
+    }
+
+    /// Whether the boarding station has verifiably been departed: the next
+    /// calling point reporting an actual time, a TRUST departure event at the
+    /// boarding CRS, or (last resort) the expected departure time passing.
+    /// A non-clock expected time like "Delayed" blocks the clock fallback —
+    /// a delayed train must not be inferred departed from its schedule.
+    static func boardingDeparted(
+        details: ServiceDetailsResponse,
+        movements: [MovementEvent],
+        boardingCRS: String
+    ) -> Bool {
+        if let next = details.subsequentCallingPoints.first, hasBeenPassed(next) {
+            return true
+        }
+        if movements.contains(where: { $0.crs == boardingCRS && $0.eventType == "DEPARTURE" }) {
+            return true
+        }
+        if let exp = details.expectedDeparture, !isClockTime(exp) {
+            return false
+        }
+        let depTime = details.expectedDeparture ?? details.scheduledDeparture
+        guard let depTime else { return false }
+        return timeHasPassed(depTime)
+    }
+
     static func isClockTime(_ s: String) -> Bool {
         let parts = s.split(separator: ":")
         return parts.count == 2 && Int(parts[0]) != nil && Int(parts[1]) != nil
@@ -194,7 +239,17 @@ final class TrainTracker {
         }
 
         return stops.map { stop in
-            if let exp = stop.expectedTime, let d = parse(exp) { return d }
+            if let exp = stop.expectedTime {
+                if let d = parse(exp) { return d }
+                // Non-clock statuses: "On time"/"No report" mean the schedule
+                // holds; "Delayed"/"Cancelled" mean the real time is unknown —
+                // return nil so position inference can't mark the stop passed
+                // just because its scheduled time elapsed.
+                let status = exp.lowercased()
+                if status != "on time" && status != "no report" && !status.isEmpty {
+                    return nil
+                }
+            }
             return parse(stop.time)
         }
     }
@@ -232,11 +287,21 @@ final class TrainTracker {
             crs: boardingStation?.code
         ) else { return }
 
+        // Fetch TRUST movements before building stops so departed flags can
+        // use this poll's evidence, not the previous one's.
+        if let rid = train.rid {
+            let resp = try? await APIClient.shared.getMovements(rid: rid, uid: train.uid)
+            if let events = resp?.movements, !events.isEmpty {
+                movements = events
+            }
+        }
+
         var updatedStops: [Stop] = []
 
-        // Previous calling points — the train has already departed these.
+        // Previous calling points are relative to the boarding station, NOT
+        // the train's position — only an actual time proves they were passed.
         for cp in details.previousCallingPoints {
-            updatedStops.append(Stop(from: cp, hasDeparted: true))
+            updatedStops.append(Stop(from: cp, hasDeparted: TrainTracker.hasBeenPassed(cp)))
         }
 
         // Boarding station, sitting between previous and subsequent.
@@ -248,12 +313,11 @@ final class TrainTracker {
             let boardExpected = isTerminus
                 ? details.expectedArrival
                 : details.expectedDeparture
-            let boardDeparted: Bool = {
-                if isTerminus { return false }
-                if !details.previousCallingPoints.isEmpty { return true }
-                let depTime = boardExpected ?? boardTime
-                return TrainTracker.timeHasPassed(depTime)
-            }()
+            let boardDeparted = !isTerminus && TrainTracker.boardingDeparted(
+                details: details,
+                movements: movements,
+                boardingCRS: boarding.code
+            )
             updatedStops.append(Stop(
                 station: boarding.name,
                 crs: boarding.code,
@@ -267,7 +331,7 @@ final class TrainTracker {
 
         // Subsequent calling points.
         for cp in details.subsequentCallingPoints {
-            updatedStops.append(Stop(from: cp))
+            updatedStops.append(Stop(from: cp, hasDeparted: TrainTracker.hasBeenPassed(cp)))
         }
 
         // Mark first as origin and last as destination.
@@ -317,19 +381,29 @@ final class TrainTracker {
             hasDepartedBoardingStation: boardingHasDeparted
         )
 
-        if let rid = train.rid {
-            let resp = try? await APIClient.shared.getMovements(rid: rid, uid: train.uid)
-            if let events = resp?.movements, !events.isEmpty {
-                movements = events
-            }
-        }
-
         recalculatePosition()
         updateLiveActivity()
 
-        if overallProgress >= 1.0 {
+        // End tracking only on evidence of arrival at the destination — an
+        // actual time from LDBWS or a TRUST arrival event — never from clock
+        // inference alone, which self-terminates tracking on delayed trains.
+        // A 30-minute grace past the last known arrival time is the safety
+        // net so tracking can't run forever if evidence never arrives.
+        if destinationArrived() {
             stopTracking()
         }
+    }
+
+    private func destinationArrived() -> Bool {
+        guard let last = trackedStops.last else { return false }
+        if let at = last.actualTime, TrainTracker.isClockTime(at) { return true }
+        if !last.crs.isEmpty && movements.contains(where: { $0.crs == last.crs && $0.eventType == "ARRIVAL" }) {
+            return true
+        }
+        if let arrival = stopTimes.last ?? nil, Date().timeIntervalSince(arrival) > 30 * 60 {
+            return true
+        }
+        return false
     }
 
     // MARK: - Live Activity
@@ -406,6 +480,7 @@ final class TrainTracker {
             platform: trackedTrain?.platform ?? "—",
             status: trainStatus.rawValue,
             hasDeparted: departed,
+            isBoarding: isBoarding,
             progressFraction: overallProgress,
             previousStopDepartureDate: previousStopDepartureDate,
             nextStopArrivalDate: nextStopArrivalDate,

@@ -19,6 +19,7 @@ struct JourneyScreen: View {
     @State private var stationPins: [StationPin] = []
     @State private var isLoadingMap = true
     @State private var movements: [MovementEvent] = []
+    @Environment(\.scenePhase) private var scenePhase
 
     private var originName: String { details?.origin?.name ?? train.origin }
     private var destName: String { details?.destination?.name ?? train.destination }
@@ -56,9 +57,6 @@ struct JourneyScreen: View {
                             reasonBanner(reason)
                         }
                         performanceCard
-                        if !movements.isEmpty {
-                            movementsSection
-                        }
                         stopsSection
                         JourneyMapSection(
                             stationPins: stationPins,
@@ -74,6 +72,20 @@ struct JourneyScreen: View {
         .background(Theme.cream)
         .task {
             await loadDetails()
+        }
+        // Untracked journeys were a one-shot snapshot — stop states never
+        // updated after departure. Silent refresh keeps them live; when the
+        // tracker owns this service its own poll loop covers the stops, so
+        // skip the fetch (the tracker's cadence is faster anyway).
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(45))
+                guard !Task.isCancelled else { break }
+                if !isTrackingThis && !isLoading && loadError == nil {
+                    await loadDetails(silent: true)
+                }
+            }
         }
         .sheet(isPresented: $showTrackingSheet) {
             TrackingConfirmationSheet(
@@ -188,7 +200,19 @@ struct JourneyScreen: View {
         let cal = Calendar.current
         let nowComps = cal.dateComponents([.year, .month, .day], from: now)
         return stops.map { stop in
-            let timeStr = stop.expectedTime ?? stop.time
+            // "Delayed"/"Cancelled" expected times mean the real time is
+            // unknown — return nil rather than falling back to the schedule,
+            // so position inference can't mark the stop passed by clock.
+            if let exp = stop.expectedTime, !TrainTracker.isClockTime(exp) {
+                let status = exp.lowercased()
+                if status != "on time" && status != "no report" && !status.isEmpty {
+                    return nil
+                }
+            }
+            let timeStr: String = {
+                if let exp = stop.expectedTime, TrainTracker.isClockTime(exp) { return exp }
+                return stop.time
+            }()
             let parts = timeStr.split(separator: ":")
             guard parts.count == 2,
                   let h = Int(parts[0]), let m = Int(parts[1]) else { return nil }
@@ -229,7 +253,10 @@ struct JourneyScreen: View {
 
     // MARK: - Data
 
-    private func loadDetails() async {
+    /// Loads service details. Silent reloads (the auto-refresh loop) keep the
+    /// last good snapshot on failure and skip the one-time extras
+    /// (reliability, map coordinates).
+    private func loadDetails(silent: Bool = false) async {
         do {
             let response = try await APIClient.shared.getServiceDetails(
                 serviceId: train.serviceId,
@@ -239,9 +266,10 @@ struct JourneyScreen: View {
 
             var allStops: [Stop] = []
 
-            // All previousCallingPoints — the train has departed these stations.
+            // previousCallingPoints are relative to the boarding station, NOT
+            // the train's position — only an actual time proves them passed.
             for cp in response.previousCallingPoints {
-                allStops.append(Stop(from: cp, hasDeparted: true))
+                allStops.append(Stop(from: cp, hasDeparted: TrainTracker.hasBeenPassed(cp)))
             }
 
             // The boarding station itself — sits between previous and subsequent.
@@ -253,12 +281,11 @@ struct JourneyScreen: View {
             let boardingExpected = boardingIsTerminal
                 ? response.expectedArrival
                 : response.expectedDeparture
-            let boardingDeparted: Bool = {
-                if boardingIsTerminal { return false }
-                if !response.previousCallingPoints.isEmpty { return true }
-                let depTime = boardingExpected ?? boardingTime
-                return TrainTracker.timeHasPassed(depTime)
-            }()
+            let boardingDeparted = !boardingIsTerminal && TrainTracker.boardingDeparted(
+                details: response,
+                movements: movements,
+                boardingCRS: boardingStation.code
+            )
             allStops.append(Stop(
                 station: boardingStation.name,
                 crs: boardingStation.code,
@@ -271,7 +298,7 @@ struct JourneyScreen: View {
 
             // All subsequentCallingPoints.
             for cp in response.subsequentCallingPoints {
-                allStops.append(Stop(from: cp))
+                allStops.append(Stop(from: cp, hasDeparted: TrainTracker.hasBeenPassed(cp)))
             }
 
             // Mark first as origin, last as destination.
@@ -302,16 +329,19 @@ struct JourneyScreen: View {
             let lastTime = allStops.last?.time ?? ""
             duration = computeDuration(from: firstTime, to: lastTime)
         } catch {
-            stops = []
-            stopTimes = []
-            loadError = (error as? APIError)?.errorDescription ?? "Could not load service details"
+            // A failed silent refresh keeps showing the last good snapshot.
+            if !silent {
+                stops = []
+                stopTimes = []
+                loadError = (error as? APIError)?.errorDescription ?? "Could not load service details"
+            }
         }
 
         withAnimation(.easeOut(duration: 0.35)) {
             isLoading = false
         }
 
-        if loadError == nil,
+        if !silent, loadError == nil,
            let dCrs = details?.destination?.crs, !dCrs.isEmpty,
            let oCrs = details?.origin?.crs, !oCrs.isEmpty {
             reliability = try? await APIClient.shared.getReliability(origin: oCrs, destination: dCrs, days: 5)
@@ -324,7 +354,9 @@ struct JourneyScreen: View {
             }
         }
 
-        Task { await loadMapCoordinates() }
+        if !silent {
+            Task { await loadMapCoordinates() }
+        }
     }
 
     private func loadMapCoordinates() async {
@@ -785,87 +817,10 @@ struct JourneyScreen: View {
     }
 
     // MARK: - Movements
-
-    private var movementsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                LiveDot(size: 12)
-                Text("LIVE POSITION")
-                    .font(.mono(9, weight: .semibold))
-                    .tracking(1.3)
-                    .foregroundStyle(Theme.inkMute)
-                if let hc = train.headcode {
-                    CodeTag(text: hc)
-                }
-                Spacer()
-                Text("TRUST")
-                    .font(.mono(9, weight: .medium))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.inkMute)
-            }
-
-            VStack(spacing: 0) {
-                ForEach(Array(movements.prefix(6).enumerated()), id: \.element.id) { index, event in
-                    movementRow(event, isFirst: index == 0)
-                    if index < min(movements.count, 6) - 1 {
-                        Divider().overlay(Theme.line).padding(.leading, 36)
-                    }
-                }
-            }
-            .padding(.vertical, 4)
-            .background(Theme.card)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-        }
-        .padding(.horizontal, 18)
-        .padding(.top, 14)
-    }
-
-    private func movementRow(_ event: MovementEvent, isFirst: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: event.eventType == "ARRIVAL" ? "arrow.down.right" : "arrow.up.right")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(isFirst ? accent : Theme.inkMute)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(event.crs ?? event.tiploc)
-                        .font(.ui(13, weight: .semibold))
-                        .foregroundStyle(Theme.ink)
-                    Text(event.eventType == "ARRIVAL" ? "arr" : "dep")
-                        .font(.mono(9, weight: .medium))
-                        .tracking(0.5)
-                        .foregroundStyle(Theme.inkMute)
-                    if let plat = event.platform?.trimmingCharacters(in: .whitespaces), !plat.isEmpty {
-                        Text("Plat. \(plat)")
-                            .font(.mono(9, weight: .medium))
-                            .tracking(0.3)
-                            .foregroundStyle(Theme.inkMute)
-                    }
-                }
-            }
-
-            Spacer()
-
-            HStack(spacing: 5) {
-                Text(formatISOToClockTime(event.actualTimestamp))
-                    .font(.mono(13, weight: .medium))
-                    .foregroundStyle(event.variationSeconds > 0 ? Theme.delayedText : Theme.ink)
-                if event.variationSeconds != 0 {
-                    let mins = event.variationSeconds / 60
-                    Text(mins > 0 ? "+\(mins)" : "\(mins)")
-                        .font(.mono(10, weight: .semibold))
-                        .foregroundStyle(event.variationSeconds > 0 ? Theme.delayedText : Theme.perfGood)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background((event.variationSeconds > 0 ? Theme.delayedText : Theme.perfGood).opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-    }
+    //
+    // TRUST movements are no longer rendered as their own section — the raw
+    // event feed wasn't useful on screen. The data still powers stop states
+    // (trustCurrentIndex / trustInfoForStop) and departure evidence.
 
     private func formatISOToClockTime(_ iso: String) -> String {
         let fmt = ISO8601DateFormatter()
@@ -1191,6 +1146,25 @@ private struct StopRow: View {
         return Int(parts[0]) != nil && Int(parts[1]) != nil
     }
 
+    /// Minutes from now until a same-day "HH:MM" clock time; nil when the
+    /// string isn't a clock time. Times more than 6h in the past are treated
+    /// as tomorrow (post-midnight wrap), matching TrainTracker's anchoring.
+    static func minutesUntil(_ timeStr: String) -> Int? {
+        let parts = timeStr.split(separator: ":")
+        guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]) else { return nil }
+        let now = Date()
+        let cal = Calendar.current
+        var c = cal.dateComponents([.year, .month, .day], from: now)
+        c.hour = h
+        c.minute = m
+        c.second = 0
+        guard var target = cal.date(from: c) else { return nil }
+        if target.timeIntervalSince(now) < -6 * 3600 {
+            target = cal.date(byAdding: .day, value: 1, to: target) ?? target
+        }
+        return Int(target.timeIntervalSince(now) / 60)
+    }
+
     private var stopStatusLabel: String {
         if isPassed {
             return stop.type == .destination ? "ARRIVED" : "DEPARTED"
@@ -1200,7 +1174,15 @@ private struct StopRow: View {
             if let trust = trustInfo, trust.hasArrived && !trust.hasDeparted {
                 return "AT STATION"
             }
-            if stop.type == .origin && !stop.hasDeparted { return "BOARDING" }
+            if stop.type == .origin && !stop.hasDeparted {
+                // "Boarding" only means something close to departure — an
+                // hour out the train usually isn't even at the platform.
+                if let minutes = StopRow.minutesUntil(TrainTracker.clockTimeString(for: stop)),
+                   minutes > 15 {
+                    return "DEPARTS \(TrainTracker.clockTimeString(for: stop))"
+                }
+                return "BOARDING"
+            }
             return "DEPARTED"
         }
         switch stop.type {
@@ -1538,10 +1520,25 @@ private struct LiveTrackingStrip: View {
                 .foregroundStyle(Theme.ink)
                 .lineLimit(2)
         } else if atOrigin {
-            Text("Boarding at \(tracker.nextStopName)")
-                .font(.ui(15, weight: .semibold))
-                .foregroundStyle(Theme.ink)
-                .lineLimit(2)
+            // lastDeparted is the origin row here — nextStopName would be
+            // the stop *after* the one the user is actually boarding at.
+            let boardingName = lastDeparted?.station ?? tracker.nextStopName
+            if tracker.isBoarding {
+                Text("Boarding at \(boardingName)")
+                    .font(.ui(15, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(2)
+            } else if let dep = tracker.previousStopDepartureDate {
+                Text("Departs \(boardingName) at \(clockString(dep))")
+                    .font(.ui(15, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(2)
+            } else {
+                Text("Awaiting departure from \(boardingName)")
+                    .font(.ui(15, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(2)
+            }
         } else if let arrival = tracker.nextStopArrivalDate {
             let remaining = arrival.timeIntervalSince(now)
             if remaining < 30 && remaining > -120 {
@@ -1565,6 +1562,12 @@ private struct LiveTrackingStrip: View {
                 .font(.mono(15, weight: .semibold))
                 .foregroundStyle(Theme.inkMute)
         }
+    }
+
+    private func clockString(_ d: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm"
+        return fmt.string(from: d)
     }
 
     private var destinationTimeString: String {
