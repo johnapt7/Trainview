@@ -693,11 +693,39 @@ struct JourneyScreen: View {
             HStack {
                 IconButton(systemName: "chevron.left", size: 14, heroStyle: true, action: onBack)
                 Spacer()
+                if !isLoading {
+                    ShareLink(item: shareText) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Theme.ink)
+                            .frame(width: 38, height: 38)
+                            .background(Theme.ink.opacity(0.14))
+                            .clipShape(Circle())
+                    }
+                }
             }
             trackPill
         }
         .padding(.top, 6)
         .padding(.bottom, 10)
+    }
+
+    /// Snapshot of the user's leg for the share sheet. While tracking with
+    /// an alighting stop, the destination is the user's own stop, not the
+    /// terminus.
+    private var shareText: String {
+        let destinationStop = isTrackingThis ? tracker.trackedStops.last : displayedStops.last
+        let departTime = boardingStop.flatMap { TripShareText.bestTime(for: $0) } ?? train.time
+        return TripShareText.compose(
+            originName: boardingStation.name,
+            platform: boardingStop?.platform ?? departPlatform,
+            destName: destinationStop?.station ?? destName,
+            departTime: departTime,
+            arrivalTime: destinationStop.flatMap { TripShareText.bestTime(for: $0) },
+            status: isTrackingThis ? tracker.trainStatus : train.status,
+            delayMinutes: destinationStop?.delayMinutes,
+            operatorName: train.operator
+        )
     }
 
     @ViewBuilder
