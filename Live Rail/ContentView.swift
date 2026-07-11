@@ -64,11 +64,25 @@ struct ContentView: View {
                 )
             case .journey:
                 if let train = activeTrain {
-                    JourneyScreen(train: train, boardingStation: activeStation, accent: accent, tracker: tracker) {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .departures
+                    JourneyScreen(
+                        train: train,
+                        boardingStation: activeStation,
+                        accent: accent,
+                        tracker: tracker,
+                        onBack: {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                screen = .departures
+                            }
+                        },
+                        onSelectTrain: { alternative in
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                activeTrain = alternative
+                            }
                         }
-                    }
+                    )
+                    // Re-create the screen when an alternative is picked so
+                    // its loaded details don't leak across trains.
+                    .id(train.serviceId)
                 }
             }
         }

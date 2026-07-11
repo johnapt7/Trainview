@@ -7,6 +7,8 @@ struct JourneyScreen: View {
     let accent: Color
     var tracker: TrainTracker
     let onBack: () -> Void
+    /// Swaps the journey screen to another train (re-route suggestions).
+    var onSelectTrain: (Train) -> Void = { _ in }
 
     @State private var details: ServiceDetailsResponse?
     @State private var stops: [Stop] = []
@@ -65,6 +67,16 @@ struct JourneyScreen: View {
                         factsRow
                         if let reason = train.cancelReason ?? train.delayReason {
                             reasonBanner(reason)
+                        }
+                        if needsAlternatives {
+                            AlternativesSection(
+                                boardingStation: boardingStation,
+                                destinationCrs: destCrs.isEmpty ? train.destinationCrs : destCrs,
+                                destinationName: destName,
+                                excludedServiceId: train.serviceId,
+                                accent: accent,
+                                onSelectTrain: onSelectTrain
+                            )
                         }
                         if let divide = divideAssociations.first {
                             dividesBanner(divide)
@@ -129,6 +141,36 @@ struct JourneyScreen: View {
             return tracker.trackedStops
         }
         return stops
+    }
+
+    /// The user's boarding stop, matched by CRS where possible (tracked stop
+    /// arrays can be trimmed, so `boardingIndex` only safely indexes the
+    /// snapshot `stops`).
+    private var boardingStop: Stop? {
+        if let match = displayedStops.first(where: { !$0.crs.isEmpty && $0.crs == boardingStation.code }) {
+            return match
+        }
+        guard stops.indices.contains(boardingIndex) else { return nil }
+        return stops[boardingIndex]
+    }
+
+    /// Re-route suggestions appear when the journey is cancelled, or delayed
+    /// 15+ minutes at the boarding station (or delayed with no estimate).
+    /// Once the user has departed the boarding station, alternatives from
+    /// there are no use, so the card stays hidden.
+    private var needsAlternatives: Bool {
+        let status = isTrackingThis ? tracker.trainStatus : train.status
+        switch status {
+        case .cancelled:
+            return true
+        case .delayed:
+            guard let boarding = boardingStop else { return true }
+            guard !boarding.hasDeparted else { return false }
+            guard let delay = boarding.delayMinutes else { return true }
+            return delay >= 15
+        case .onTime:
+            return false
+        }
     }
 
     private var inferredCurrentStopIndex: Int {
