@@ -87,7 +87,11 @@ final class APIClient {
             URLQueryItem(name: "type", value: type),
             URLQueryItem(name: "rows", value: "\(rows)"),
         ]
-        if let filterCrs { items.append(URLQueryItem(name: "filterCrs", value: filterCrs)) }
+        // The backend reads "to"/"from", not "filterCrs" — it silently
+        // ignores unknown params, so a wrong name returns an UNfiltered board.
+        if let filterCrs {
+            items.append(URLQueryItem(name: type == "arrivals" ? "from" : "to", value: filterCrs))
+        }
         if let timeOffset, timeOffset != 0 { items.append(URLQueryItem(name: "timeOffset", value: "\(timeOffset)")) }
         return try await request("/board/\(crs)", queryItems: items)
     }

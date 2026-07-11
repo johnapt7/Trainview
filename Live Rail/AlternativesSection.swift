@@ -16,17 +16,37 @@ enum AlternativeFinder {
     /// Picks up to `max` viable alternatives from a destination-filtered
     /// board: drops the disrupted service itself and anything cancelled.
     /// Board order is already soonest-first, so order is preserved.
+    ///
+    /// `serverFiltered` is whether the backend confirmed applying the
+    /// destination filter (it echoes `filterCrs` back). When it did, a
+    /// service is trusted to call at the destination unless its inline
+    /// calling points prove otherwise; when it didn't, only services that
+    /// provably serve the destination survive — an unfiltered board must
+    /// never be passed off as alternatives.
     static func pick(
         from services: [BoardService],
         excludingServiceId: String,
         destinationCrs: String,
+        serverFiltered: Bool,
         max: Int = 3
     ) -> [Alternative] {
         services
             .filter { $0.serviceId != excludingServiceId }
             .filter { !$0.isCancelled && $0.status != "cancelled" }
+            .filter { serves(destinationCrs, service: $0, trustedWhenUnknown: serverFiltered) }
             .prefix(max)
             .map { Alternative(service: $0, arrivalTime: arrival(at: destinationCrs, in: $0)) }
+    }
+
+    /// Whether a service serves the destination: terminates there, or its
+    /// inline calling points include it. With no calling points to check,
+    /// falls back to `trustedWhenUnknown`.
+    static func serves(_ crs: String, service: BoardService, trustedWhenUnknown: Bool) -> Bool {
+        if service.destinationCrs == crs { return true }
+        guard let cps = service.subsequentCallingPoints, !cps.isEmpty else {
+            return trustedWhenUnknown
+        }
+        return cps.contains { $0.crs == crs }
     }
 
     /// Arrival time at the destination: actual, else live expected, else
@@ -136,20 +156,27 @@ struct AlternativesSection: View {
             onSelectTrain(Train(from: service))
         } label: {
             HStack(spacing: 8) {
-                Text(depart)
-                    .font(.mono(15, weight: .semibold))
-                    .foregroundStyle(service.status == "delayed" ? Theme.delayedText : Theme.ink)
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.inkMute)
-                Text(alternative.arrivalTime ?? "—")
-                    .font(.mono(15, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
-
-                if let duration {
-                    Text(duration)
-                        .font(.mono(10, weight: .medium))
-                        .foregroundStyle(Theme.inkMute)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        Text(depart)
+                            .font(.mono(15, weight: .semibold))
+                            .foregroundStyle(service.status == "delayed" ? Theme.delayedText : Theme.ink)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Theme.inkMute)
+                        Text(alternative.arrivalTime ?? "—")
+                            .font(.mono(15, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                        if let duration {
+                            Text(duration)
+                                .font(.mono(10, weight: .medium))
+                                .foregroundStyle(Theme.inkMute)
+                        }
+                    }
+                    Text("to \(service.destination.decodingHTMLEntities())")
+                        .font(.ui(11))
+                        .foregroundStyle(Theme.inkSoft)
+                        .lineLimit(1)
                 }
 
                 Spacer(minLength: 0)
@@ -199,7 +226,8 @@ struct AlternativesSection: View {
                 alternatives = AlternativeFinder.pick(
                     from: board.services,
                     excludingServiceId: excludedServiceId,
-                    destinationCrs: destinationCrs
+                    destinationCrs: destinationCrs,
+                    serverFiltered: board.filterCrs != nil
                 )
             }
         } catch {
