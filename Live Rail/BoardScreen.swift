@@ -30,6 +30,7 @@ struct BoardScreen: View {
     @State private var loadError: String?
     @State private var nrccMessages: [String] = []
     @State private var callingPoints: [String: [CallingPointResponse]] = [:]
+    @State private var serverFilterConfirmed = false
     @State private var callingPointsTasks: [Task<Void, Never>] = []
     @State private var showSearch = false
     @State private var showFAQ = false
@@ -62,8 +63,16 @@ struct BoardScreen: View {
             ["GR", "XC", "AW", "GW", "TP", "VT", "EM", "HT", "GC"].contains($0.operatorCode)
         }
         }
-        if let dest = filterDestination {
-            result = result.filter { $0.destinationCrs == dest.code }
+        // The banner promises "Calling at X", so a train counts if it
+        // terminates at X or its known calling points include X. Skip
+        // entirely when the server already filtered — its rows all qualify,
+        // and re-filtering here would drop calling-at trains whose calling
+        // points haven't been fetched yet.
+        if let dest = filterDestination, !serverFilterConfirmed {
+            result = result.filter { train in
+                train.destinationCrs == dest.code
+                    || (callingPoints[train.serviceId]?.contains { $0.crs == dest.code } ?? false)
+            }
         }
         return result
     }
@@ -204,6 +213,11 @@ struct BoardScreen: View {
                 services = response.services.map { Train(from: $0) }
                 nrccMessages = response.nrccMessages ?? []
             }
+            // When the server confirms it applied the destination filter
+            // (echoed back in the response), every row already calls at the
+            // destination and the client-side re-filter must stay out of the
+            // way — it can only wrongly drop calling-at trains.
+            serverFilterConfirmed = response.filterCrs != nil
             loadError = nil
             lastLoadedAt = Date()
 
@@ -782,9 +796,10 @@ struct BoardScreen: View {
                     earlierTrainsButton
                 }
                 VStack(spacing: 4) {
-                    Text("No services")
+                    Text(filterDestination != nil ? "No direct trains" : "No services")
                         .font(.display(18))
-                    Text("No \(isArrival ? "arrivals" : "departures") currently scheduled")
+                    Text(filterDestination.map { "Nothing runs direct to \($0.name) right now" }
+                        ?? "No \(isArrival ? "arrivals" : "departures") currently scheduled")
                         .font(.ui(11))
                         .foregroundStyle(Theme.inkMute)
                 }
@@ -792,12 +807,44 @@ struct BoardScreen: View {
                 .padding(.vertical, 28)
                 .background(Theme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
+                if let dest = filterDestination, !isArrival {
+                    TransferSection(
+                        originStation: station,
+                        destinationCrs: dest.code,
+                        destinationName: dest.name,
+                        accent: accent,
+                        onSelectTrain: onOpenTrain
+                    )
+                }
                 if timeOffset < 90 {
                     laterTrainsButton
                 }
             } else {
                 if timeOffset > -120 {
                     earlierTrainsButton
+                }
+                // Client-side filtering can empty a non-empty board (server
+                // filter unconfirmed); give that the same transfer fallback
+                // as an empty server-filtered board.
+                if filtered.isEmpty, let dest = filterDestination, !isArrival {
+                    VStack(spacing: 4) {
+                        Text("No direct trains")
+                            .font(.display(18))
+                        Text("Nothing runs direct to \(dest.name) right now")
+                            .font(.ui(11))
+                            .foregroundStyle(Theme.inkMute)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 28)
+                    .background(Theme.card)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    TransferSection(
+                        originStation: station,
+                        destinationCrs: dest.code,
+                        destinationName: dest.name,
+                        accent: accent,
+                        onSelectTrain: onOpenTrain
+                    )
                 }
                 ForEach(Array(filtered.enumerated()), id: \.element.id) { index, train in
                     TrainCard(

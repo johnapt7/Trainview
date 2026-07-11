@@ -73,6 +73,9 @@ struct AlternativesSection: View {
     let onSelectTrain: (Train) -> Void
 
     @State private var alternatives: [AlternativeFinder.Alternative] = []
+    /// Two-leg fallback, populated only when no direct alternative exists —
+    /// a stranded passenger's next-best option.
+    @State private var transferOptions: [TransferOption] = []
     @State private var isLoading = true
     @State private var loadError: String?
 
@@ -127,6 +130,15 @@ struct AlternativesSection: View {
                         .fill(Theme.ink.opacity(0.06))
                         .frame(height: 44)
                         .shimmer()
+                }
+            }
+        } else if alternatives.isEmpty && !transferOptions.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("No direct trains — via a change:")
+                    .font(.ui(11))
+                    .foregroundStyle(Theme.inkSoft)
+                ForEach(transferOptions) { option in
+                    TransferOptionRow(option: option, onSelectTrain: onSelectTrain)
                 }
             }
         } else if alternatives.isEmpty {
@@ -222,17 +234,29 @@ struct AlternativesSection: View {
                 crs: boardingStation.code,
                 filterCrs: destinationCrs
             )
+            let found = AlternativeFinder.pick(
+                from: board.services,
+                excludingServiceId: excludedServiceId,
+                destinationCrs: destinationCrs,
+                serverFiltered: board.filterCrs != nil
+            )
+            // No direct option left — try a two-leg route before giving up.
+            var transfers: [TransferOption] = []
+            if found.isEmpty {
+                transfers = (try? await TransferPlanner.fetchOptions(
+                    from: boardingStation.code,
+                    destinationCrs: destinationCrs
+                )) ?? []
+                transfers.removeAll { $0.leg1.serviceId == excludedServiceId }
+            }
             withAnimation(.easeOut(duration: 0.3)) {
-                alternatives = AlternativeFinder.pick(
-                    from: board.services,
-                    excludingServiceId: excludedServiceId,
-                    destinationCrs: destinationCrs,
-                    serverFiltered: board.filterCrs != nil
-                )
+                alternatives = found
+                transferOptions = transfers
             }
         } catch {
             loadError = "Couldn't load alternatives — check the departure board."
             alternatives = []
+            transferOptions = []
         }
         isLoading = false
     }
