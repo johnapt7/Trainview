@@ -38,7 +38,7 @@ struct StationSearchSheet: View {
                 .font(.mono(10, weight: .semibold))
                 .tracking(1.5)
                 .foregroundStyle(Theme.inkMute)
-            Text("Calling at...")
+            Text("Going to...")
                 .font(.display(26, weight: .medium))
                 .tracking(-0.3)
         }

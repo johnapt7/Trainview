@@ -117,6 +117,20 @@ final class APIClient {
         return try await request("/service/\(encoded)", queryItems: queryItems)
     }
 
+    // MARK: - Formation, Loading & Associations
+
+    func getFormation(rid: String) async throws -> FormationResponse {
+        try await request("/formation/\(rid)")
+    }
+
+    func getTrainLoading(rid: String) async throws -> TrainLoadingResponse {
+        try await request("/loading/train/\(rid)")
+    }
+
+    func getAssociations(rid: String) async throws -> AssociationsResponse {
+        try await request("/associations/\(rid)")
+    }
+
     // MARK: - Station Search
 
     func searchStations(query: String, limit: Int = 10) async throws -> [StationResponse] {

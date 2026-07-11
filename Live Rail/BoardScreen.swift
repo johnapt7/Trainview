@@ -6,6 +6,23 @@ struct BoardScreen: View {
     let onOpenTrain: (Train) -> Void
     let onBack: () -> Void
 
+    /// Seeds the destination filter so a saved journey opens the board
+    /// already filtered, exactly as if the user had picked the destination
+    /// from the search sheet.
+    init(
+        station: Station,
+        accent: Color,
+        initialFilterDestination: Station? = nil,
+        onOpenTrain: @escaping (Train) -> Void,
+        onBack: @escaping () -> Void
+    ) {
+        self.station = station
+        self.accent = accent
+        self.onOpenTrain = onOpenTrain
+        self.onBack = onBack
+        _filterDestination = State(initialValue: initialFilterDestination)
+    }
+
     @State private var mode: BoardMode = .departures
     @State private var filter: FilterMode = .all
     @State private var services: [Train] = []
@@ -19,11 +36,13 @@ struct BoardScreen: View {
     @State private var filterDestination: Station?
     @State private var timeOffset: Int = 0
     @State private var favouriteStore = FavouriteStationsStore()
+    @State private var journeysStore = RecentJourneysStore()
     @State private var stationDisruptions: [StationDisruption] = []
     @State private var disruptionsExpanded = false
     @State private var liveFeed: StationLiveFeed?
     @State private var isSilentlyRefreshing = false
     @State private var lastLoadedAt = Date.distantPast
+    @AppStorage("hideFastestHint") private var hideFastestHint = false
     @Environment(\.scenePhase) private var scenePhase
 
     /// Fallback cadence for the foreground auto-refresh loop. The WebSocket
@@ -68,12 +87,15 @@ struct BoardScreen: View {
     private var timeLabel: String {
         if timeOffset == 0 { return "NOW" }
         let mins = abs(timeOffset)
+        let span: String
         if mins >= 60 {
             let h = mins / 60
             let m = mins % 60
-            return m > 0 ? "\(h)H \(m)M AGO" : "\(h)H AGO"
+            span = m > 0 ? "\(h)H \(m)M" : "\(h)H"
+        } else {
+            span = "\(mins)M"
         }
-        return "\(mins)M AGO"
+        return timeOffset < 0 ? "\(span) AGO" : "IN \(span)"
     }
 
     var body: some View {
@@ -92,6 +114,8 @@ struct BoardScreen: View {
                             onOpenTrain: onOpenTrain
                         )
                         .padding(.top, 14)
+                    } else if !isArrival && !hideFastestHint {
+                        fastestHintCard
                     }
                     if filterDestination != nil {
                         destinationBanner
@@ -147,6 +171,7 @@ struct BoardScreen: View {
         .sheet(isPresented: $showSearch) {
             StationSearchSheet(currentStation: station.code) { selected in
                 filterDestination = selected
+                journeysStore.add(origin: station, destination: selected)
                 Task { await loadBoard() }
             }
         }
@@ -182,13 +207,25 @@ struct BoardScreen: View {
             loadError = nil
             lastLoadedAt = Date()
 
+            // Calling points delivered inline with the board (details
+            // operations) — the per-service fan-out below only fills gaps.
+            var seededPoints: [String: [CallingPointResponse]] = [:]
+            for svc in response.services {
+                let points = mode == .departures
+                    ? svc.subsequentCallingPoints
+                    : svc.previousCallingPoints
+                if let points, !points.isEmpty {
+                    seededPoints[svc.serviceId] = points
+                }
+            }
+
             if let disruptions = try? await APIClient.shared.getStationDisruptions(crs: station.code) {
                 let activeOperators = Set(response.services.map(\.operatorCode))
                 withAnimation(.easeOut(duration: 0.3)) {
                     stationDisruptions = disruptions.disruptions.filter { activeOperators.contains($0.id) }
                 }
             }
-            loadCallingPoints(incremental: silent)
+            loadCallingPoints(incremental: silent, seeded: seededPoints)
         } catch {
             if !silent {
                 services = []
@@ -207,21 +244,25 @@ struct BoardScreen: View {
 
     /// Incremental mode keeps calling points already on screen and only
     /// fetches rows new to the board — a silent refresh shouldn't fan out a
-    /// service-details request per visible train every tick.
-    private func loadCallingPoints(incremental: Bool = false) {
+    /// service-details request per visible train every tick. `seeded` holds
+    /// calling points that arrived inline with the board response; those
+    /// services never need a details request at all.
+    private func loadCallingPoints(incremental: Bool = false, seeded: [String: [CallingPointResponse]] = [:]) {
         if incremental {
             let current = Set(services.map(\.serviceId))
-            callingPoints = callingPoints.filter { current.contains($0.key) }
+            var kept = callingPoints.filter { current.contains($0.key) }
+            for (id, points) in seeded { kept[id] = points }
+            callingPoints = kept
             callingPointsTasks.removeAll { $0.isCancelled }
         } else {
             for task in callingPointsTasks { task.cancel() }
             callingPointsTasks.removeAll()
-            callingPoints = [:]
+            callingPoints = seeded
         }
         let currentMode = mode
         for train in services {
             let serviceId = train.serviceId
-            if incremental && callingPoints[serviceId] != nil { continue }
+            if callingPoints[serviceId] != nil { continue }
             let task = Task {
                 guard let details = try? await APIClient.shared.getServiceDetails(serviceId: serviceId) else { return }
                 guard !Task.isCancelled else { return }
@@ -238,13 +279,13 @@ struct BoardScreen: View {
 
     // MARK: - Header
 
-    /// Sits outside the ScrollView so the back / mode toggle / search / info
-    /// controls stay reachable while the board scrolls beneath. Top padding
-    /// keeps it clear of the status bar and Dynamic Island.
+    /// Sits outside the ScrollView so the back / mode toggle / filter / info
+    /// controls stay reachable while the board scrolls beneath. The system
+    /// safe area keeps it clear of the status bar and Dynamic Island.
     private var pinnedTopBar: some View {
         topBar
             .padding(.horizontal, 18)
-            .padding(.top, 62)
+            .padding(.top, 8)
             .padding(.bottom, 4)
             .background(Theme.cream)
     }
@@ -273,7 +314,7 @@ struct BoardScreen: View {
 
             HStack(spacing: 6) {
                 ZStack(alignment: .topTrailing) {
-                    IconButton(systemName: "magnifyingglass", size: 14) { showSearch = true }
+                    IconButton(systemName: "line.3.horizontal.decrease", size: 14) { showSearch = true }
                     if filterDestination != nil {
                         Circle()
                             .fill(Color(hex: 0xC94A2E))
@@ -330,7 +371,10 @@ struct BoardScreen: View {
                     .tracking(-0.3)
                     .lineLimit(1)
                 Spacer()
-                Button(action: onBack) {
+                Button {
+                    mode = isArrival ? .departures : .arrivals
+                    filter = .all
+                } label: {
                     Image(systemName: "arrow.left.arrow.right")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(accent)
@@ -590,30 +634,48 @@ struct BoardScreen: View {
                 .padding(.bottom, 3)
             }
             Spacer()
-            Button {} label: {
-                ZStack(alignment: .topTrailing) {
-                    Image(systemName: "line.3.horizontal.decrease")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.ink)
-                        .frame(width: 40, height: 40)
-                        .background(Theme.card)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Theme.line, lineWidth: 1)
-                        )
-                    if filter != .all {
-                        Circle()
-                            .fill(Color(hex: 0xC94A2E))
-                            .frame(width: 7, height: 7)
-                            .offset(x: -8, y: 8)
-                    }
-                }
-            }
         }
         .padding(.horizontal, 18)
         .padding(.top, 6)
         .padding(.bottom, 14)
+    }
+
+    // MARK: - Fastest Hint
+
+    /// Shown in place of the fastest-departures strip until the user has
+    /// favourites (or dismisses it) — the strip is invisible otherwise and
+    /// nothing else explains what starring stations unlocks.
+    private var fastestHintCard: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "star")
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.ink)
+                .frame(width: 34, height: 34)
+                .background(accent.opacity(0.35))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            Text("Star stations you travel to — the fastest trains to them will appear here.")
+                .font(.ui(12))
+                .foregroundStyle(Theme.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    hideFastestHint = true
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.inkMute)
+                    .frame(width: 24, height: 24)
+                    .background(Theme.ink.opacity(0.06))
+                    .clipShape(Circle())
+            }
+        }
+        .padding(12)
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
     }
 
     // MARK: - Earlier Trains
@@ -631,6 +693,38 @@ struct BoardScreen: View {
                     .tracking(0.2)
                 Spacer()
                 Image(systemName: "chevron.up")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.inkMute)
+            }
+            .foregroundStyle(Theme.ink)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity)
+            .background(Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Theme.line, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Later Trains
+
+    private var laterTrainsButton: some View {
+        Button {
+            timeOffset = min(timeOffset + 30, 90)
+            Task { await loadBoard() }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(timeOffset == 0 ? "Show later trains" : "Show 30 min later")
+                    .font(.ui(12, weight: .semibold))
+                    .tracking(0.2)
+                Spacer()
+                Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.inkMute)
             }
@@ -698,6 +792,9 @@ struct BoardScreen: View {
                 .padding(.vertical, 28)
                 .background(Theme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
+                if timeOffset < 90 {
+                    laterTrainsButton
+                }
             } else {
                 if timeOffset > -120 {
                     earlierTrainsButton
@@ -716,6 +813,9 @@ struct BoardScreen: View {
                         removal: .opacity
                     ))
                     .animation(.easeOut(duration: 0.3).delay(Double(index) * 0.04), value: filtered.count)
+                }
+                if timeOffset < 90 {
+                    laterTrainsButton
                 }
             }
             HStack {
@@ -978,7 +1078,7 @@ struct TrainCard: View {
                     .foregroundStyle(operatorBrand.fg)
                 Text(train.operator)
                     .font(.ui(11, weight: .medium))
-                    .foregroundStyle(operatorBrand.bg)
+                    .foregroundStyle(operatorBrand.label)
                     .lineLimit(1)
                     .padding(.leading, 6)
                     .padding(.trailing, 8)
@@ -986,6 +1086,15 @@ struct TrainCard: View {
             }
             .background(operatorBrand.bg.opacity(0.1))
             .clipShape(Capsule())
+            if let stock = train.rollingStock?.label {
+                Text(stock)
+                    .font(.mono(10, weight: .medium))
+                    .tracking(0.2)
+                    .foregroundStyle(Theme.inkMute)
+                    .lineLimit(1)
+                    .padding(.leading, 8)
+                    .layoutPriority(-1)
+            }
             Spacer(minLength: 10)
             if let carriages = train.carriages {
                 HStack(spacing: 5) {

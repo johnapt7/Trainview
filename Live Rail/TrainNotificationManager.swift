@@ -13,11 +13,25 @@ final class TrainNotificationManager {
     private var trainDescription = ""
     private var serviceId = ""
     private var isAuthorized = false
+    private var didNotifyStopIsNext = false
 
     func configure(train: Train, boardingStation: Station) {
         serviceId = train.serviceId
         trainDescription = "Your \(train.time) to \(train.destination)"
         lastSnapshot = nil
+        didNotifyStopIsNext = false
+    }
+
+    /// Fired once per tracked journey, when the user's alighting stop becomes
+    /// the next stop.
+    func notifyStopIsNext(_ stationName: String) {
+        guard isAuthorized, !didNotifyStopIsNext else { return }
+        didNotifyStopIsNext = true
+        scheduleNotification(
+            id: "\(serviceId)-stop-next",
+            title: "Your stop is next",
+            body: "Get ready to get off at \(stationName)"
+        )
     }
 
     func requestPermissionIfNeeded() async {
@@ -94,11 +108,13 @@ final class TrainNotificationManager {
 
     func reset() {
         lastSnapshot = nil
+        didNotifyStopIsNext = false
         UNUserNotificationCenter.current().removePendingNotificationRequests(
             withIdentifiers: [
                 "\(serviceId)-cancelled",
                 "\(serviceId)-platform",
-                "\(serviceId)-delay"
+                "\(serviceId)-delay",
+                "\(serviceId)-stop-next"
             ]
         )
     }

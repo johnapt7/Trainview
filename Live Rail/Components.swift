@@ -30,6 +30,9 @@ struct StatusPill: View {
         .background(colors.bg)
         .foregroundStyle(colors.fg)
         .clipShape(Capsule())
+        // Status chips stay bright in dark mode — their fixed dark
+        // foregrounds need the light variants of the chip backgrounds.
+        .environment(\.colorScheme, .light)
     }
 }
 

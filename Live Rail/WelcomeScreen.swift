@@ -14,6 +14,8 @@ struct WelcomeScreen: View {
             }
         }
         .background(Theme.cream)
+        // The accent hero bleeds up behind the status bar.
+        .ignoresSafeArea(edges: .top)
     }
 
     // MARK: - Hero
@@ -26,7 +28,7 @@ struct WelcomeScreen: View {
                     .font(.display(32, weight: .semibold))
                     .tracking(-0.6)
                     .lineSpacing(-2)
-                Text("A clean, glanceable board for the UK & European rail network \u{2014} from your nearest station to the last stop on the line.")
+                Text("A clean, glanceable board for the UK rail network \u{2014} from your nearest station to the last stop on the line.")
                     .font(.ui(13))
                     .lineSpacing(2)
                     .foregroundStyle(Theme.inkSoft)
@@ -46,13 +48,15 @@ struct WelcomeScreen: View {
             )
         )
         .foregroundStyle(Theme.ink)
+        // Bright brand hero in both colour schemes.
+        .environment(\.colorScheme, .light)
     }
 
     private var brandMark: some View {
         HStack(spacing: 8) {
             Image(systemName: "tram.fill")
                 .font(.system(size: 16))
-            Text("TRAINBOARD")
+            Text("LIVE RAIL")
                 .font(.mono(11, weight: .semibold))
                 .tracking(1.5)
         }
@@ -75,13 +79,13 @@ struct WelcomeScreen: View {
             BulletRow(
                 icon: "rectangle.split.3x1.fill",
                 title: "Live departure boards",
-                detail: "See the next hour of trains from any station \u{2014} platforms, operators, delays, and cancellations updated every 30 seconds.",
+                detail: "See the next hour of trains from any station \u{2014} platforms, operators, delays, and cancellations updated live.",
                 accent: accent
             )
             BulletRow(
                 icon: "tram.fill",
                 title: "Full journey detail",
-                detail: "Tap a service to see every calling point, rolling stock, carriage count, and on-board amenities.",
+                detail: "Tap a service to see every calling point, carriage count, a route map, and live progress between stops.",
                 accent: accent
             )
             BulletRow(
@@ -104,7 +108,7 @@ struct WelcomeScreen: View {
                 PermissionRow(
                     icon: "mappin",
                     title: "Location",
-                    detail: "So we can surface stations near you and switch boards as you travel. We never store your location.",
+                    detail: "So we can surface stations near you. We never store your location.",
                     required: false
                 )
                 PermissionRow(
@@ -148,7 +152,7 @@ struct WelcomeScreen: View {
                 .clipShape(Capsule())
             }
 
-            Text("By continuing you agree to our \(Text("Terms").underline()) and \(Text("Privacy Policy").underline()). You can change permissions at any time in Settings.")
+            Text("You can change permissions at any time in Settings.")
         }
         .font(.ui(10.5))
         .foregroundStyle(Theme.inkMute)

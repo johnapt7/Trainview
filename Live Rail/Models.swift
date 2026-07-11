@@ -92,6 +92,7 @@ struct Train: Identifiable {
     let rid: String?
     let uid: String?
     let headcode: String?
+    let rollingStock: RollingStockInfo?
 
     init(id: String, time: String, destination: String, destinationCrs: String = "", origin: String,
          via: String, platform: String, operator: String, operatorCode: String,
@@ -119,6 +120,7 @@ struct Train: Identifiable {
         self.rid = nil
         self.uid = nil
         self.headcode = nil
+        self.rollingStock = nil
     }
 
     init(from service: BoardService) {
@@ -151,6 +153,7 @@ struct Train: Identifiable {
         self.rid = service.rid
         self.uid = service.uid
         self.headcode = service.headcode
+        self.rollingStock = service.rollingStock
 
         switch service.status {
         case "delayed":

@@ -19,7 +19,17 @@ struct JourneyScreen: View {
     @State private var stationPins: [StationPin] = []
     @State private var isLoadingMap = true
     @State private var movements: [MovementEvent] = []
+    @State private var coaches: [CoachDisplay] = []
+    @State private var divideAssociations: [TrainAssociation] = []
+    /// Index of the boarding station in `stops` — the hero and fact tiles
+    /// describe the user's leg from here, not the whole service.
+    @State private var boardingIndex: Int = 0
     @Environment(\.scenePhase) private var scenePhase
+
+    /// Stops remaining on the user's leg (boarding station → terminus).
+    private var personalStopCount: Int {
+        max(stops.count - 1 - boardingIndex, 0)
+    }
 
     private var originName: String { details?.origin?.name ?? train.origin }
     private var destName: String { details?.destination?.name ?? train.destination }
@@ -56,6 +66,12 @@ struct JourneyScreen: View {
                         if let reason = train.cancelReason ?? train.delayReason {
                             reasonBanner(reason)
                         }
+                        if let divide = divideAssociations.first {
+                            dividesBanner(divide)
+                        }
+                        if !coaches.isEmpty {
+                            coachSection
+                        }
                         performanceCard
                         stopsSection
                         JourneyMapSection(
@@ -70,6 +86,9 @@ struct JourneyScreen: View {
             }
         }
         .background(Theme.cream)
+        // The hero paints its brand colour up behind the status bar; content
+        // clears it via the hero's own top padding.
+        .ignoresSafeArea(edges: .top)
         .task {
             await loadDetails()
         }
@@ -325,9 +344,12 @@ struct JourneyScreen: View {
 
             stops = allStops
             stopTimes = JourneyScreen.parseStopTimes(allStops)
-            let firstTime = allStops.first?.time ?? ""
+            // The boarding station is the row appended after the previous
+            // calling points, so its index is exactly their count.
+            boardingIndex = min(response.previousCallingPoints.count, max(allStops.count - 1, 0))
+            let boardTime = allStops.indices.contains(boardingIndex) ? allStops[boardingIndex].time : ""
             let lastTime = allStops.last?.time ?? ""
-            duration = computeDuration(from: firstTime, to: lastTime)
+            duration = computeDuration(from: boardTime, to: lastTime)
         } catch {
             // A failed silent refresh keeps showing the last good snapshot.
             if !silent {
@@ -352,10 +374,82 @@ struct JourneyScreen: View {
             if let events = resp?.movements, !events.isEmpty {
                 movements = events.sorted { $0.actualTimestamp > $1.actualTimestamp }
             }
+            await loadTrainExtras(rid: rid)
         }
 
         if !silent {
             Task { await loadMapCoordinates() }
+        }
+    }
+
+    /// Fetches formation, coach loading, and associations — all served from
+    /// in-memory caches on the backend, so cheap enough to refresh on every
+    /// poll. Each is best-effort: absent data just hides its section.
+    private func loadTrainExtras(rid: String) async {
+        async let formationFetch = try? APIClient.shared.getFormation(rid: rid)
+        async let loadingFetch = try? APIClient.shared.getTrainLoading(rid: rid)
+        async let associationsFetch = try? APIClient.shared.getAssociations(rid: rid)
+
+        let formation = await formationFetch
+        let loading = await loadingFetch
+        let associations = await associationsFetch
+
+        let merged = Self.mergeCoachData(
+            formation: formation,
+            loading: loading,
+            boardingCRS: boardingStation.code
+        )
+        let divides = (associations?.associations ?? [])
+            .filter { $0.category == "divide" && !$0.cancelled }
+
+        withAnimation(.easeOut(duration: 0.3)) {
+            coaches = merged
+            divideAssociations = divides
+        }
+    }
+
+    /// Merges the formation coach list with the most relevant loading record:
+    /// the one observed at the boarding station if present, otherwise the
+    /// first record carrying data. Falls back to loading-only coaches when
+    /// no formation is cached.
+    static func mergeCoachData(
+        formation: FormationResponse?,
+        loading: TrainLoadingResponse?,
+        boardingCRS: String
+    ) -> [CoachDisplay] {
+        let records = loading?.loadings ?? []
+        let bestLoading = records.first { $0.crs == boardingCRS && !($0.loading ?? []).isEmpty }
+            ?? records.first { !($0.loading ?? []).isEmpty }
+        var percentByCoach: [String: Int] = [:]
+        for entry in bestLoading?.loading ?? [] {
+            if let number = entry.coachNumber, let pct = entry.percent {
+                percentByCoach[number] = pct
+            }
+        }
+
+        let formationCoaches = formation?.formation?.first?.coaches?.coach ?? []
+        if !formationCoaches.isEmpty {
+            return formationCoaches.enumerated().map { index, coach in
+                CoachDisplay(
+                    id: "\(coach.coachNumber ?? "")-\(index)",
+                    number: coach.coachNumber ?? "?",
+                    isFirstClass: coach.coachClass?.lowercased() == "first",
+                    toilet: coach.toiletType.flatMap { $0 == "None" ? nil : $0 },
+                    loadPercent: coach.coachNumber.flatMap { percentByCoach[$0] }
+                )
+            }
+        }
+
+        // No formation cached — build the diagram from loading data alone.
+        return (bestLoading?.loading ?? []).enumerated().compactMap { index, entry in
+            guard let number = entry.coachNumber else { return nil }
+            return CoachDisplay(
+                id: "\(number)-\(index)",
+                number: number,
+                isFirstClass: false,
+                toilet: nil,
+                loadPercent: entry.percent
+            )
         }
     }
 
@@ -547,6 +641,9 @@ struct JourneyScreen: View {
             )
         )
         .foregroundStyle(Theme.ink)
+        // The hero keeps its bright brand colour in dark mode; forcing light
+        // resolution keeps its ink-on-accent contrast intact.
+        .environment(\.colorScheme, .light)
     }
 
     private var heroTopBar: some View {
@@ -648,7 +745,10 @@ struct JourneyScreen: View {
                     .font(.mono(14, weight: .medium))
                     .tracking(0.3)
                     .foregroundStyle(Theme.inkSoft)
-                Text(train.origin)
+                // The user's boarding station — train.time and the platform
+                // are both relative to it, so the origin name would mislead
+                // anyone boarding mid-route.
+                Text(boardingStation.name)
                     .font(.display(22))
                     .tracking(-0.2)
                     .lineLimit(2)
@@ -658,6 +758,13 @@ struct JourneyScreen: View {
                     .tracking(0.5)
                     .textCase(.uppercase)
                     .foregroundStyle(Theme.inkSoft)
+                if boardingIndex > 0 {
+                    Text("Service from \(train.origin)")
+                        .font(.mono(9))
+                        .tracking(0.3)
+                        .foregroundStyle(Theme.inkSoft)
+                        .lineLimit(1)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -668,8 +775,8 @@ struct JourneyScreen: View {
                         .tracking(0.4)
                 }
                 connectorLine
-                if stops.count > 2 {
-                    Text("\(stops.count - 1) STOPS")
+                if personalStopCount > 1 {
+                    Text("\(personalStopCount) STOPS")
                         .font(.mono(9))
                         .tracking(1.3)
                         .foregroundStyle(Theme.inkSoft)
@@ -723,6 +830,15 @@ struct JourneyScreen: View {
         OperatorBrand.brand(for: train.operatorCode)
     }
 
+    /// "Pendolino · Service 12345678" when the rolling stock is known.
+    private var heroServiceLine: String {
+        let service = "Service \(train.serviceId.prefix(8).uppercased())"
+        if let stock = train.rollingStock?.label {
+            return "\(stock) · \(service)"
+        }
+        return service
+    }
+
     private var heroOperator: some View {
         HStack(spacing: 10) {
             Text(train.operatorCode)
@@ -738,7 +854,7 @@ struct JourneyScreen: View {
                 Text(train.operator)
                     .font(.ui(13, weight: .semibold))
                     .foregroundStyle(operatorBrand.bg)
-                Text("Service \(train.serviceId.prefix(8).uppercased())")
+                Text(heroServiceLine)
                     .font(.mono(10, weight: .medium))
                     .tracking(0.3)
                     .foregroundStyle(Theme.inkSoft)
@@ -757,7 +873,7 @@ struct JourneyScreen: View {
         HStack(spacing: 8) {
             FactTile(icon: "train.side.front.car", value: train.carriages.map { "\($0)" } ?? "—", label: "Carriages")
             FactTile(icon: "clock", value: duration.isEmpty ? "—" : duration, label: "Journey")
-            FactTile(icon: "mappin.and.ellipse", value: stops.count < 2 ? "—" : "\(stops.count - 1)", label: "Stops")
+            FactTile(icon: "mappin.and.ellipse", value: personalStopCount < 1 ? "—" : "\(personalStopCount)", label: "Stops")
         }
         .padding(.horizontal, 18)
         .padding(.top, 18)
@@ -778,6 +894,98 @@ struct JourneyScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(train.status == .cancelled ? Theme.bad.opacity(0.3) : Theme.warn.opacity(0.3))
         .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+    }
+
+    // MARK: - Divides Banner
+
+    /// Darwin association of category "divide": part of this train separates
+    /// at the named station. Coach-level portion data isn't available, so
+    /// the copy stays general.
+    private func dividesBanner(_ divide: TrainAssociation) -> some View {
+        let place = divide.station ?? divide.crs ?? "an intermediate station"
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.ink)
+                .frame(width: 30, height: 30)
+                .background(accent)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("This train divides at \(place)")
+                    .font(.ui(13, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                Text("Check you're in the right portion for your stop — ask staff or listen for announcements on board.")
+                    .font(.ui(11))
+                    .foregroundStyle(Theme.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(accent.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(accent.opacity(0.4), lineWidth: 1)
+        )
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+    }
+
+    // MARK: - Coaches
+
+    private var quietestCoach: CoachDisplay? {
+        coaches.filter { $0.loadPercent != nil && !$0.isFirstClass }
+            .min { ($0.loadPercent ?? 101) < ($1.loadPercent ?? 101) }
+    }
+
+    private var hasLoadingData: Bool {
+        coaches.contains { $0.loadPercent != nil }
+    }
+
+    private var coachSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("YOUR TRAIN")
+                    .font(.mono(9, weight: .semibold))
+                    .tracking(1.3)
+                    .foregroundStyle(Theme.inkMute)
+                Spacer()
+                if hasLoadingData {
+                    HStack(spacing: 5) {
+                        LiveDot(size: 8)
+                        Text("Live busyness")
+                            .font(.mono(9, weight: .medium))
+                            .tracking(0.4)
+                            .foregroundStyle(Theme.inkMute)
+                    }
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    ForEach(coaches) { coach in
+                        CoachCell(coach: coach, accent: accent)
+                    }
+                }
+            }
+
+            if let quietest = quietestCoach, let pct = quietest.loadPercent {
+                Text("Quietest: coach \(Text(quietest.number).bold()) · \(pct)% full")
+                    .font(.ui(11))
+                    .foregroundStyle(Theme.inkSoft)
+            } else if !hasLoadingData {
+                Text("Coach busyness appears here once reported during the journey")
+                    .font(.ui(10))
+                    .foregroundStyle(Theme.inkMute)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 18)
         .padding(.top, 14)
     }
@@ -880,6 +1088,65 @@ struct JourneyScreen: View {
 }
 
 // MARK: - Sub-components
+
+/// One coach in the "Your train" diagram: formation identity merged with
+/// the latest reported loading percentage (nil until the operator reports).
+struct CoachDisplay: Identifiable {
+    let id: String
+    let number: String
+    let isFirstClass: Bool
+    let toilet: String?
+    let loadPercent: Int?
+}
+
+private struct CoachCell: View {
+    let coach: CoachDisplay
+    let accent: Color
+
+    private var fillColor: Color {
+        guard let pct = coach.loadPercent else { return Theme.ink.opacity(0.05) }
+        if pct <= 40 { return Theme.perfGood.opacity(0.28) }
+        if pct <= 70 { return Theme.warn.opacity(0.45) }
+        return Theme.cancelledText.opacity(0.3)
+    }
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Text(coach.number)
+                .font(.mono(10, weight: .semibold))
+                .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+            if coach.isFirstClass {
+                Text("1st")
+                    .font(.mono(8, weight: .bold))
+                    .foregroundStyle(Theme.cream)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Theme.ink)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            } else if let pct = coach.loadPercent {
+                Text("\(pct)%")
+                    .font(.mono(9))
+                    .foregroundStyle(Theme.inkSoft)
+            } else if coach.toilet == "Accessible" {
+                Image(systemName: "figure.roll")
+                    .font(.system(size: 8))
+                    .foregroundStyle(Theme.inkMute)
+            } else {
+                Text("—")
+                    .font(.mono(9))
+                    .foregroundStyle(Theme.inkMute.opacity(0.5))
+            }
+        }
+        .frame(width: 44, height: 46)
+        .background(fillColor)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(coach.isFirstClass ? Theme.ink.opacity(0.4) : Theme.line, lineWidth: 1)
+        )
+    }
+}
 
 private struct FactTile: View {
     let icon: String
@@ -1185,10 +1452,11 @@ private struct StopRow: View {
             }
             return "DEPARTED"
         }
+        // Silence means "fine" — only exceptional states get a caption, so
+        // delays stand out instead of drowning in a column of "ON TIME".
         switch stop.type {
-        case .origin, .destination: return ""
+        case .origin, .destination, .stop: return ""
         case .major: return "DELAYED"
-        case .stop: return "ON TIME"
         }
     }
 

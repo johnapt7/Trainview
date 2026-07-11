@@ -7,19 +7,47 @@ struct TrackingConfirmationSheet: View {
     let tracker: TrainTracker
     let accent: Color
     @Environment(\.dismiss) private var dismiss
+    @State private var alightingCRS: String = ""
 
     private var brand: OperatorBrand {
         OperatorBrand.brand(for: train.operatorCode)
     }
 
+    /// Stops after the boarding station — the places the user could get off.
+    /// Empty when boarding at the terminus (arrivals tracking), in which case
+    /// the picker is hidden and tracking follows the whole service.
+    private var alightingOptions: [Stop] {
+        guard let idx = stops.firstIndex(where: { $0.crs == boardingStation.code }),
+              idx + 1 < stops.count else { return [] }
+        return Array(stops[(idx + 1)...])
+    }
+
+    private var selectedAlighting: Stop? {
+        alightingOptions.first { $0.crs == alightingCRS } ?? alightingOptions.last
+    }
+
+    /// Stops on the user's journey: boarding station → selected alighting stop.
+    private var personalStopCount: Int {
+        guard let selected = selectedAlighting,
+              let idx = alightingOptions.firstIndex(where: { $0.crs == selected.crs }) else {
+            return max(stops.count - 1, 0)
+        }
+        return idx + 1
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             handle
-            content
+            ScrollView(showsIndicators: false) {
+                content
+            }
         }
         .background(Theme.cream)
-        .presentationDetents([.medium])
+        .presentationDetents([.fraction(0.8)])
         .presentationDragIndicator(.hidden)
+        .onAppear {
+            alightingCRS = alightingOptions.last?.crs ?? ""
+        }
     }
 
     private var handle: some View {
@@ -44,9 +72,13 @@ struct TrackingConfirmationSheet: View {
 
             trainSummary
 
+            if !alightingOptions.isEmpty {
+                alightingPicker
+            }
+
             VStack(alignment: .leading, spacing: 10) {
                 featureRow(icon: "location.fill", text: "See which stop the train is at in real time")
-                featureRow(icon: "bell.fill", text: "Notifies you of platform changes, delays, and cancellations")
+                featureRow(icon: "bell.fill", text: "Alerts for platform changes, delays — and when your stop is next")
                 featureRow(icon: "rectangle.stack.fill", text: "Track from the lock screen with Live Activity")
             }
             .padding(16)
@@ -55,7 +87,12 @@ struct TrackingConfirmationSheet: View {
 
             VStack(spacing: 10) {
                 Button {
-                    tracker.startTracking(train: train, stops: stops, boardingStation: boardingStation)
+                    tracker.startTracking(
+                        train: train,
+                        stops: stops,
+                        boardingStation: boardingStation,
+                        alightingCRS: selectedAlighting?.crs
+                    )
                     dismiss()
                 } label: {
                     HStack(spacing: 8) {
@@ -96,7 +133,7 @@ struct TrackingConfirmationSheet: View {
                     .foregroundStyle(brand.fg)
                 Text(train.operator)
                     .font(.ui(11, weight: .medium))
-                    .foregroundStyle(brand.bg)
+                    .foregroundStyle(brand.label)
                     .lineLimit(1)
                     .padding(.leading, 6)
                     .padding(.trailing, 8)
@@ -109,7 +146,7 @@ struct TrackingConfirmationSheet: View {
                 VStack(spacing: 2) {
                     Text(train.time)
                         .font(.mono(18, weight: .medium))
-                    Text(train.origin)
+                    Text(boardingStation.name)
                         .font(.ui(12))
                         .foregroundStyle(Theme.inkSoft)
                         .lineLimit(1)
@@ -120,16 +157,16 @@ struct TrackingConfirmationSheet: View {
                     Image(systemName: "arrow.right")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.inkMute)
-                    Text("\(stops.count) stops")
+                    Text("\(personalStopCount) stop\(personalStopCount == 1 ? "" : "s")")
                         .font(.mono(9, weight: .medium))
                         .tracking(0.3)
                         .foregroundStyle(Theme.inkMute)
                 }
 
                 VStack(spacing: 2) {
-                    Text(stops.last?.time ?? "")
+                    Text(selectedAlighting?.time ?? stops.last?.time ?? "")
                         .font(.mono(18, weight: .medium))
-                    Text(train.destination)
+                    Text(selectedAlighting?.station ?? train.destination)
                         .font(.ui(12))
                         .foregroundStyle(Theme.inkSoft)
                         .lineLimit(1)
@@ -140,6 +177,51 @@ struct TrackingConfirmationSheet: View {
         .padding(16)
         .background(Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// "Where are you getting off?" — defaults to the train's terminus. The
+    /// tracker trims the journey here, so the countdown, Live Activity, and
+    /// the "your stop is next" alert are all about this stop.
+    private var alightingPicker: some View {
+        Menu {
+            Picker("Getting off at", selection: $alightingCRS) {
+                ForEach(alightingOptions, id: \.crs) { stop in
+                    Text("\(stop.station) · \(stop.time)").tag(stop.crs)
+                }
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "figure.walk")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: 26, height: 26)
+                    .background(accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("GETTING OFF AT")
+                        .font(.mono(9, weight: .semibold))
+                        .tracking(1.0)
+                        .foregroundStyle(Theme.inkMute)
+                    Text(selectedAlighting?.station ?? "")
+                        .font(.ui(14, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if let time = selectedAlighting?.time, !time.isEmpty {
+                    Text(time)
+                        .font(.mono(12, weight: .medium))
+                        .foregroundStyle(Theme.inkMute)
+                }
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.inkMute)
+            }
+            .padding(14)
+            .background(Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
     }
 
     private func featureRow(icon: String, text: String) -> some View {

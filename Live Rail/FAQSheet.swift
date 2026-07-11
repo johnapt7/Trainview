@@ -19,7 +19,7 @@ struct FAQSheet: View {
             id: "track",
             icon: "dot.radiowaves.up.forward",
             title: "Tracking a train",
-            body: "Tap any service on the board to open its full journey. On the journey screen, hit Track live to start receiving updates as the train moves between stops. If you've allowed Live Activities, the tracking ribbon also appears on the Lock Screen and Dynamic Island, so you can check progress without opening the app."
+            body: "Tap any service on the board to open its full journey. On the journey screen, hit Track live, choose where you're getting off, and updates follow the train between stops — including an alert when your stop is next. If you've allowed Live Activities, the tracking ribbon also appears on the Lock Screen and Dynamic Island, so you can check progress without opening the app."
         ),
         Entry(
             id: "fav",
@@ -61,7 +61,7 @@ struct FAQSheet: View {
             id: "filter",
             icon: "line.3.horizontal.decrease",
             title: "Filter by destination",
-            body: "Tap the magnifying glass to filter the board to services calling at a specific station. A small dot on the icon indicates the filter is active. To clear it, tap the destination chip that appears under the station card."
+            body: "Tap the filter button to narrow the board to services calling at a specific station. A small dot on the icon indicates the filter is active. To clear it, tap the destination chip that appears under the station card. Filtering also saves the route to Your journeys on the home screen."
         ),
     ]
 
@@ -368,7 +368,7 @@ struct FAQSheet: View {
 
     private var filterPreview: some View {
         ZStack(alignment: .topTrailing) {
-            Image(systemName: "magnifyingglass")
+            Image(systemName: "line.3.horizontal.decrease")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.ink)
                 .frame(width: 38, height: 38)

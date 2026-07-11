@@ -1,9 +1,11 @@
 import SwiftUI
 import CoreLocation
+import UIKit
 
 struct HomeScreen: View {
     let accent: Color
     let onPickStation: (Station) -> Void
+    let onPickJourney: (RecentJourney) -> Void
 
     @State private var query = ""
     @State private var searchResults: [Station]?
@@ -16,6 +18,7 @@ struct HomeScreen: View {
     @State private var locationManager = LocationManager()
     @State private var recentStore = RecentStationsStore()
     @State private var favouriteStore = FavouriteStationsStore()
+    @State private var journeysStore = RecentJourneysStore()
     @State private var showFAQ = false
     @State private var tocIndicators: [TOCIndicator] = []
     @State private var showNetworkStatus = false
@@ -26,12 +29,6 @@ struct HomeScreen: View {
         if hour < 12 { return "Good morning" }
         if hour < 18 { return "Good afternoon" }
         return "Good evening"
-    }
-
-    private var timeString: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "HH:mm"
-        return fmt.string(from: Date())
     }
 
     var body: some View {
@@ -52,6 +49,9 @@ struct HomeScreen: View {
                     if let results = searchResults {
                         searchResultsSection(results)
                     } else {
+                        if !journeysStore.journeys.isEmpty {
+                            journeysSection
+                        }
                         if !favouriteStore.stations.isEmpty {
                             favouritesSection
                         }
@@ -164,13 +164,13 @@ struct HomeScreen: View {
     // MARK: - Header
 
     /// Sits outside the ScrollView so it stays visible while content scrolls
-    /// underneath, and clears the status bar / Dynamic Island via the top
-    /// padding (matching the offset used elsewhere in the app).
+    /// underneath. The system safe area keeps it clear of the status bar and
+    /// Dynamic Island on every device.
     private var pinnedTopBar: some View {
         HStack {
             Color.clear.frame(width: 38, height: 38)
             Spacer()
-            Text("RAIL BOARD")
+            Text("LIVE RAIL")
                 .font(.mono(11, weight: .semibold))
                 .tracking(2)
                 .foregroundStyle(Theme.ink)
@@ -178,7 +178,7 @@ struct HomeScreen: View {
             IconButton(systemName: "info.circle", size: 14) { showFAQ = true }
         }
         .padding(.horizontal, 18)
-        .padding(.top, 62)
+        .padding(.top, 8)
         .padding(.bottom, 10)
         .background(Theme.cream)
     }
@@ -227,7 +227,7 @@ struct HomeScreen: View {
             }
         }
         .padding(14)
-        .background(searchFocused || !query.isEmpty ? Color(hex: 0xFFFDF5) : Theme.card)
+        .background(searchFocused || !query.isEmpty ? Theme.searchField : Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -280,6 +280,81 @@ struct HomeScreen: View {
             } else {
                 stationList(results, style: .search)
             }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 24)
+    }
+
+    // MARK: - Journeys
+
+    /// One-tap shortcuts to the boards the user actually uses: each row opens
+    /// the origin's departure board pre-filtered to the destination. Rows are
+    /// recorded automatically when a board is filtered by destination.
+    private var journeysSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Your journeys")
+                    .font(.display(22))
+                    .tracking(-0.2)
+                Text("Tap to see the next trains on this route")
+                    .font(.mono(11, weight: .medium))
+                    .tracking(0.3)
+                    .foregroundStyle(Theme.inkMute)
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(journeysStore.journeys.enumerated()), id: \.element.id) { index, journey in
+                    Button {
+                        onPickJourney(journey)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(journey.destination.code)
+                                .font(.mono(11, weight: .semibold))
+                                .tracking(0.4)
+                                .foregroundStyle(Theme.ink)
+                                .frame(width: 42, height: 42)
+                                .background(accent)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("To \(journey.destination.name)")
+                                    .font(.display(18))
+                                    .tracking(-0.1)
+                                    .foregroundStyle(Theme.ink)
+                                    .lineLimit(1)
+                                Text("from \(journey.origin.name)")
+                                    .font(.ui(11))
+                                    .foregroundStyle(Theme.inkMute)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.inkMute)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                journeysStore.remove(journey)
+                            }
+                        } label: {
+                            Label("Remove journey", systemImage: "trash")
+                        }
+                    }
+                    .overlay(alignment: .bottom) {
+                        if index < journeysStore.journeys.count - 1 {
+                            Divider().overlay(Theme.line)
+                        }
+                    }
+                }
+            }
+            .background(Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .padding(.horizontal, 18)
         .padding(.top, 24)
@@ -373,7 +448,15 @@ struct HomeScreen: View {
 
     private var locationPrompt: some View {
         Button {
-            locationManager.requestPermission()
+            if locationManager.isDenied {
+                // The system prompt can't be shown again after a denial —
+                // send the user to the app's page in Settings instead.
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            } else {
+                locationManager.requestPermission()
+            }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "location")
@@ -383,10 +466,10 @@ struct HomeScreen: View {
                     .background(accent)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable location")
+                    Text(locationManager.isDenied ? "Location is off" : "Enable location")
                         .font(.ui(14, weight: .semibold))
                         .foregroundStyle(Theme.ink)
-                    Text("Find stations near you")
+                    Text(locationManager.isDenied ? "Open Settings to allow location access" : "Find stations near you")
                         .font(.ui(11))
                         .foregroundStyle(Theme.inkMute)
                 }
@@ -572,7 +655,7 @@ struct HomeScreen: View {
     private var footerView: some View {
         HStack(spacing: 6) {
             LiveDot(size: 9)
-            Text("LIVE DATA \u{00B7} UPDATED \(timeString)")
+            Text("LIVE DATA")
                 .font(.mono(10))
                 .tracking(1.8)
                 .foregroundStyle(Theme.inkMute)

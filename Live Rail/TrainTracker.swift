@@ -18,19 +18,21 @@ final class TrainTracker {
     var movements: [MovementEvent] = []
 
     private var stopTimes: [Date?] = []
+    private var alightingCRS: String?
     private var pollingTask: Task<Void, Never>?
     private var activity: Activity<TrainTrackingAttributes>?
     private let notificationManager = TrainNotificationManager()
 
-    func startTracking(train: Train, stops: [Stop], boardingStation: Station) {
+    func startTracking(train: Train, stops: [Stop], boardingStation: Station, alightingCRS: String? = nil) {
         trackedTrain = train
-        trackedStops = stops
+        self.alightingCRS = alightingCRS
+        trackedStops = personalStops(stops)
         self.boardingStation = boardingStation
-        stopTimes = TrainTracker.parseStopTimes(stops)
+        stopTimes = TrainTracker.parseStopTimes(trackedStops)
         lastPolled = Date()
         isTracking = true
         recalculatePosition()
-        startLiveActivity(train: train, stops: stops)
+        startLiveActivity(train: train, stops: trackedStops)
         notificationManager.configure(train: train, boardingStation: boardingStation)
         Task { await notificationManager.requestPermissionIfNeeded() }
         startPolling()
@@ -43,11 +45,33 @@ final class TrainTracker {
         trackedTrain = nil
         trackedStops = []
         boardingStation = nil
+        alightingCRS = nil
         stopTimes = []
         movements = []
         lastPolled = nil
         notificationManager.reset()
         endLiveActivity()
+    }
+
+    /// The user's journey ends where they get off, not where the train
+    /// terminates. Trims trailing stops past the alighting station and
+    /// re-marks it as the destination, so progress, ETAs, the Live Activity,
+    /// and auto-stop all describe the user's journey. Leading stops are kept —
+    /// before boarding, "how far away is the train" is the useful signal.
+    private func personalStops(_ stops: [Stop]) -> [Stop] {
+        guard let crs = alightingCRS,
+              let idx = stops.lastIndex(where: { $0.crs == crs }),
+              idx > 0, idx < stops.count - 1 else { return stops }
+        var trimmed = Array(stops[0...idx])
+        let last = trimmed[trimmed.count - 1]
+        trimmed[trimmed.count - 1] = Stop(
+            station: last.station, crs: last.crs,
+            time: last.time, expectedTime: last.expectedTime,
+            actualTime: last.actualTime,
+            platform: last.platform, type: .destination,
+            hasDeparted: last.hasDeparted
+        )
+        return trimmed
     }
 
     func isTrackingService(_ serviceId: String) -> Bool {
@@ -356,8 +380,8 @@ final class TrainTracker {
             )
         }
 
-        trackedStops = updatedStops
-        stopTimes = TrainTracker.parseStopTimes(updatedStops)
+        trackedStops = personalStops(updatedStops)
+        stopTimes = TrainTracker.parseStopTimes(trackedStops)
         lastPolled = Date()
 
         if details.isCancelled {
@@ -383,6 +407,16 @@ final class TrainTracker {
 
         recalculatePosition()
         updateLiveActivity()
+
+        // The stop the user gets off at is the last tracked stop (trimmed to
+        // the alighting station above). Alert once, as soon as it becomes the
+        // next stop after a confirmed departure.
+        if trackedStops.count > 1,
+           nextStopIndex == trackedStops.count - 1,
+           currentStopIndex == nextStopIndex - 1,
+           trackedStops.contains(where: { $0.hasDeparted }) {
+            notificationManager.notifyStopIsNext(trackedStops[nextStopIndex].station)
+        }
 
         // End tracking only on evidence of arrival at the destination — an
         // actual time from LDBWS or a TRUST arrival event — never from clock
@@ -414,7 +448,7 @@ final class TrainTracker {
         let attributes = TrainTrackingAttributes(
             serviceId: train.serviceId,
             origin: train.origin,
-            destination: train.destination,
+            destination: stops.last?.station ?? train.destination,
             operatorCode: train.operatorCode,
             operatorName: train.operator,
             scheduledDeparture: stops.first?.time ?? train.time,

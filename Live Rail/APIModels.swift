@@ -37,6 +37,30 @@ struct BoardService: Codable, Identifiable {
     let rid: String?
     let uid: String?
     let headcode: String?
+    /// Present when the backend serves the board via the LDBWS "WithDetails"
+    /// operations — spares a per-service details request for the preview.
+    let subsequentCallingPoints: [CallingPointResponse]?
+    let previousCallingPoints: [CallingPointResponse]?
+    let rollingStock: RollingStockInfo?
+}
+
+/// Rolling-stock identity resolved from the CIF timetable: the unit class
+/// plus its marketing name where one exists (Pendolino, Evero, Azuma...).
+struct RollingStockInfo: Codable {
+    let unitClass: String?
+    let name: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case unitClass = "class"
+        case name
+    }
+
+    /// "Pendolino" when named, otherwise "Class 385"; nil when unknown.
+    var label: String? {
+        if let name, !name.isEmpty { return name }
+        if let unitClass, !unitClass.isEmpty { return "Class \(unitClass)" }
+        return nil
+    }
 }
 
 // MARK: - Platform Prediction
@@ -276,6 +300,88 @@ struct MovementEvent: Codable, Identifiable {
     let platform: String?
     let toc: String
     let recordedAt: String
+}
+
+// MARK: - Formation & Coach Loading
+
+struct FormationResponse: Decodable {
+    let rid: String?
+    let formation: [FormationRecord]?
+}
+
+struct FormationRecord: Decodable {
+    let fid: String?
+    let coaches: CoachesContainer?
+}
+
+struct CoachesContainer: Decodable {
+    let coach: [CoachInfo]?
+}
+
+/// Darwin's XML→JSON conversion makes `toilet` either a plain string
+/// ("Standard", "Accessible") or an object whose type sits under the
+/// empty-string key — decode both into `toiletType`.
+struct CoachInfo: Decodable {
+    let coachNumber: String?
+    let coachClass: String?
+    let toiletType: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case coachNumber, coachClass, toilet
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        coachNumber = try container.decodeIfPresent(String.self, forKey: .coachNumber)
+        coachClass = try container.decodeIfPresent(String.self, forKey: .coachClass)
+        if let plain = try? container.decode(String.self, forKey: .toilet) {
+            toiletType = plain
+        } else if let object = try? container.decode([String: String].self, forKey: .toilet) {
+            toiletType = object[""]
+        } else {
+            toiletType = nil
+        }
+    }
+}
+
+struct TrainLoadingResponse: Decodable {
+    let rid: String?
+    let loadings: [LoadingRecord]?
+}
+
+struct LoadingRecord: Decodable {
+    let rid: String?
+    let tpl: String?
+    let crs: String?
+    let loading: [CoachLoadingEntry]?
+}
+
+struct CoachLoadingEntry: Decodable {
+    let coachNumber: String?
+    /// Percentage as a string, e.g. "45".
+    let loading: String?
+
+    var percent: Int? {
+        guard let loading else { return nil }
+        return Int(loading)
+    }
+}
+
+// MARK: - Associations (divides / joins)
+
+struct AssociationsResponse: Decodable {
+    let rid: String?
+    let associations: [TrainAssociation]?
+}
+
+struct TrainAssociation: Decodable {
+    let category: String
+    let tiploc: String?
+    let crs: String?
+    let station: String?
+    let partnerRid: String?
+    let isMain: Bool
+    let cancelled: Bool
 }
 
 // MARK: - API Error
