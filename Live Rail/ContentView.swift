@@ -4,6 +4,7 @@ enum AppScreen {
     case welcome
     case home
     case stations
+    case disruptions
     case departures
     case journey
 }
@@ -67,6 +68,20 @@ struct ContentView: View {
                     onOpenMyStations: {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             screen = .stations
+                        }
+                    },
+                    onOpenDisruptions: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            screen = .disruptions
+                        }
+                    }
+                )
+            case .disruptions:
+                DisruptionsScreen(
+                    accent: accent,
+                    onBack: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            screen = .home
                         }
                     }
                 )

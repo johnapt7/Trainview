@@ -9,6 +9,7 @@ struct HomeScreen: View {
     let onPickJourney: (RecentJourney) -> Void
     let onOpenTrackedTrain: () -> Void
     let onOpenMyStations: () -> Void
+    let onOpenDisruptions: () -> Void
 
     @State private var fromQuery = ""
     @State private var toQuery = ""
@@ -22,7 +23,6 @@ struct HomeScreen: View {
     @State private var journeysStore = RecentJourneysStore()
     @State private var showFAQ = false
     @State private var tocIndicators: [TOCIndicator] = []
-    @State private var showNetworkStatus = false
     private enum SlotField: Hashable { case from, to }
     @FocusState private var focusedField: SlotField?
 
@@ -101,9 +101,6 @@ struct HomeScreen: View {
         }
         .sheet(isPresented: $showFAQ) {
             FAQSheet()
-        }
-        .sheet(isPresented: $showNetworkStatus) {
-            NetworkStatusSheet(indicators: tocIndicators)
         }
         .task {
             tocIndicators = (try? await APIClient.shared.getTOCIndicators())?.indicators ?? []
@@ -647,7 +644,7 @@ struct HomeScreen: View {
     }
 
     private var networkStatusRow: some View {
-        Button { showNetworkStatus = true } label: {
+        Button(action: onOpenDisruptions) {
             HStack(spacing: 10) {
                 Image(systemName: disruptedCount > 0 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                     .font(.system(size: 14))
@@ -687,124 +684,6 @@ struct HomeScreen: View {
         }
         .padding(.top, 28)
         .padding(.bottom, 6)
-    }
-}
-
-// MARK: - Network Status Sheet
-
-struct NetworkStatusSheet: View {
-    let indicators: [TOCIndicator]
-    @Environment(\.dismiss) private var dismiss
-
-    private var disrupted: [TOCIndicator] {
-        indicators.filter { $0.status != "Good service" }
-    }
-
-    private var healthy: [TOCIndicator] {
-        indicators.filter { $0.status == "Good service" }
-    }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 20) {
-                    HStack(spacing: 8) {
-                        Text("\(indicators.count)")
-                            .font(.display(42))
-                            .tracking(-1)
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("operators")
-                            Text("tracked")
-                        }
-                        .font(.mono(11))
-                        .tracking(0.8)
-                        .textCase(.uppercase)
-                        .foregroundStyle(Theme.inkSoft)
-                        Spacer()
-                        if !disrupted.isEmpty {
-                            Text("\(disrupted.count) disrupted")
-                                .font(.mono(11, weight: .semibold))
-                                .tracking(0.4)
-                                .foregroundStyle(Theme.delayedText)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Theme.warn.opacity(0.3))
-                                .clipShape(Capsule())
-                        }
-                    }
-                    .padding(.horizontal, 18)
-
-                    if !disrupted.isEmpty {
-                        tocSection("Disruptions", tocs: disrupted, showDescription: true)
-                    }
-
-                    tocSection("Good service", tocs: healthy, showDescription: false)
-                }
-                .padding(.top, 8)
-                .padding(.bottom, 40)
-            }
-            .background(Theme.cream)
-            .navigationTitle("Network Status")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .font(.ui(14, weight: .semibold))
-                        .foregroundStyle(Theme.ink)
-                }
-            }
-        }
-    }
-
-    private func tocSection(_ title: String, tocs: [TOCIndicator], showDescription: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
-                .font(.mono(10, weight: .semibold))
-                .tracking(1.2)
-                .foregroundStyle(Theme.inkMute)
-                .padding(.horizontal, 18)
-
-            VStack(spacing: 0) {
-                ForEach(Array(tocs.enumerated()), id: \.element.tocCode) { index, toc in
-                    let brand = OperatorBrand.brand(for: toc.tocCode)
-                    HStack(spacing: 10) {
-                        Text(toc.tocCode)
-                            .font(.mono(9, weight: .bold))
-                            .tracking(0.5)
-                            .foregroundStyle(brand.fg)
-                            .frame(width: 32, height: 26)
-                            .background(brand.bg)
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(toc.tocName)
-                                .font(.ui(13, weight: .semibold))
-                                .foregroundStyle(Theme.ink)
-                                .lineLimit(1)
-                            if showDescription {
-                                Text(toc.statusDescription)
-                                    .font(.ui(11))
-                                    .foregroundStyle(Theme.inkSoft)
-                                    .lineLimit(2)
-                            }
-                        }
-                        Spacer()
-                        Circle()
-                            .fill(toc.status == "Good service" ? Theme.perfGood : Theme.delayedText)
-                            .frame(width: 7, height: 7)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .overlay(alignment: .bottom) {
-                        if index < tocs.count - 1 {
-                            Divider().overlay(Theme.line)
-                        }
-                    }
-                }
-            }
-            .background(Theme.card)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .padding(.horizontal, 18)
-        }
     }
 }
 
