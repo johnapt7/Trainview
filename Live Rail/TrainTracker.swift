@@ -1,6 +1,25 @@
 import Foundation
 import ActivityKit
 
+/// Everything needed to pick tracking back up after the app is relaunched.
+/// Live state is deliberately absent — the first poll refetches it.
+struct TrackingSnapshot: Codable {
+    let serviceId: String
+    let rid: String?
+    let uid: String?
+    let time: String
+    let origin: String
+    let destination: String
+    let destinationCrs: String
+    let platform: String
+    let operatorName: String
+    let operatorCode: String
+    let boardingCode: String
+    let boardingName: String
+    let alightingCRS: String?
+    let savedAt: Date
+}
+
 @Observable
 final class TrainTracker {
     var isTracking = false
@@ -21,7 +40,11 @@ final class TrainTracker {
     private var alightingCRS: String?
     private var pollingTask: Task<Void, Never>?
     private var activity: Activity<TrainTrackingAttributes>?
+    private var pushTokenTask: Task<Void, Never>?
+    private var registeredPushToken: String?
     private let notificationManager = TrainNotificationManager()
+
+    private static let snapshotKey = "trackingSnapshot"
 
     func startTracking(train: Train, stops: [Stop], boardingStation: Station, alightingCRS: String? = nil) {
         trackedTrain = train
@@ -31,6 +54,7 @@ final class TrainTracker {
         stopTimes = TrainTracker.parseStopTimes(trackedStops)
         lastPolled = Date()
         isTracking = true
+        saveSnapshot(train: train, boardingStation: boardingStation)
         recalculatePosition()
         startLiveActivity(train: train, stops: trackedStops)
         notificationManager.configure(train: train, boardingStation: boardingStation)
@@ -42,6 +66,14 @@ final class TrainTracker {
         isTracking = false
         pollingTask?.cancel()
         pollingTask = nil
+        pushTokenTask?.cancel()
+        pushTokenTask = nil
+        if let token = registeredPushToken {
+            registeredPushToken = nil
+            // Best-effort: the server also ends registrations on its own
+            // arrival evidence, so a lost unregister is not fatal.
+            Task { try? await APIClient.shared.unregisterLiveActivity(token: token) }
+        }
         trackedTrain = nil
         trackedStops = []
         boardingStation = nil
@@ -51,6 +83,76 @@ final class TrainTracker {
         lastPolled = nil
         notificationManager.reset()
         endLiveActivity()
+        UserDefaults.standard.removeObject(forKey: Self.snapshotKey)
+    }
+
+    // MARK: - Relaunch restoration
+
+    private func saveSnapshot(train: Train, boardingStation: Station) {
+        let snapshot = TrackingSnapshot(
+            serviceId: train.serviceId, rid: train.rid, uid: train.uid,
+            time: train.time, origin: train.origin,
+            destination: train.destination, destinationCrs: train.destinationCrs,
+            platform: train.platform, operatorName: train.operator,
+            operatorCode: train.operatorCode,
+            boardingCode: boardingStation.code, boardingName: boardingStation.name,
+            alightingCRS: alightingCRS, savedAt: Date()
+        )
+        if let data = try? JSONEncoder().encode(snapshot) {
+            UserDefaults.standard.set(data, forKey: Self.snapshotKey)
+        }
+    }
+
+    /// Rebuilds tracking after an app relaunch (force-quit, Xcode rerun,
+    /// system eviction). Re-adopts the existing Live Activity instead of
+    /// spawning a second one; if the user dismissed the activity, tracking
+    /// resumes in-app only. Returns whether tracking is live afterwards.
+    @MainActor
+    func resumeIfNeeded() async -> Bool {
+        if isTracking { return true }
+        guard let data = UserDefaults.standard.data(forKey: Self.snapshotKey),
+              let snapshot = try? JSONDecoder().decode(TrackingSnapshot.self, from: data) else {
+            return false
+        }
+        guard Date().timeIntervalSince(snapshot.savedAt) < 12 * 3600 else {
+            UserDefaults.standard.removeObject(forKey: Self.snapshotKey)
+            return false
+        }
+
+        let train = Train(
+            restoredId: snapshot.serviceId, time: snapshot.time,
+            origin: snapshot.origin, destination: snapshot.destination,
+            destinationCrs: snapshot.destinationCrs, platform: snapshot.platform,
+            operator: snapshot.operatorName, operatorCode: snapshot.operatorCode,
+            rid: snapshot.rid, uid: snapshot.uid
+        )
+        let boarding = Station(code: snapshot.boardingCode, name: snapshot.boardingName)
+        trackedTrain = train
+        boardingStation = boarding
+        alightingCRS = snapshot.alightingCRS
+        lastPolled = Date()
+        isTracking = true
+
+        activity = Activity<TrainTrackingAttributes>.activities.first {
+            $0.attributes.serviceId == snapshot.serviceId
+        }
+        if activity != nil {
+            observePushToken(train: train)
+        }
+        notificationManager.configure(train: train, boardingStation: boarding)
+
+        await poll()
+        // The catch-up poll may have detected arrival and ended everything.
+        guard isTracking else { return false }
+        startPolling()
+        return true
+    }
+
+    /// Immediate refresh for foreground return, so the screen and Live
+    /// Activity catch up without waiting out the poll loop's sleep.
+    func pollNow() {
+        guard isTracking else { return }
+        Task { await self.poll() }
     }
 
     /// The user's journey ends where they get off, not where the train
@@ -106,11 +208,29 @@ final class TrainTracker {
 
     // MARK: - Position Inference
 
+    /// How long the train realistically stands at a stop before departing.
+    /// LDBWS calling points carry a single time per stop, so without a dwell
+    /// the model's arrival and departure are the same instant — the map icon
+    /// would leave the moment it arrives, then jump back when the real
+    /// departure time lands. A quarter of the leg, capped at 60s, keeps
+    /// short suburban legs sensible.
+    static func dwellSeconds(legInterval: TimeInterval?) -> TimeInterval {
+        guard let gap = legInterval, gap > 0 else { return 60 }
+        return min(60, gap * 0.25)
+    }
+
+    private func legInterval(after index: Int) -> TimeInterval? {
+        guard index >= 0, index + 1 < stopTimes.count,
+              let t = stopTimes[index], let next = stopTimes[index + 1] else { return nil }
+        return next.timeIntervalSince(t)
+    }
+
     private func recalculatePosition() {
         guard !trackedStops.isEmpty else { return }
 
         let now = Date()
         var lastPassedIndex = -1
+        var standingAtNextStop = false
 
         if !movements.isEmpty {
             var departures: Set<String> = []
@@ -133,7 +253,12 @@ final class TrainTracker {
                 if nextIdx < trackedStops.count {
                     let nextCRS = trackedStops[nextIdx].crs
                     if !nextCRS.isEmpty && arrivals.contains(nextCRS) && !departures.contains(nextCRS) {
-                        lastPassedIndex = nextIdx
+                        // Arrived but not yet departed: the train is standing
+                        // at that station. Hold the icon there instead of
+                        // marking the stop passed — advancing on the arrival
+                        // event made the icon depart instantly and glitch
+                        // back when the real departure arrived.
+                        standingAtNextStop = true
                     }
                 }
             }
@@ -144,7 +269,11 @@ final class TrainTracker {
             if hasConfirmedDeparture {
                 for (i, time) in stopTimes.enumerated() {
                     guard let t = time else { continue }
-                    if now >= t { lastPassedIndex = i }
+                    // A stop's single time marks arrival; without feed
+                    // evidence, only count it departed once the dwell has
+                    // also elapsed, so the icon pauses at the platform.
+                    let dwell = Self.dwellSeconds(legInterval: legInterval(after: i))
+                    if now >= t.addingTimeInterval(dwell) { lastPassedIndex = i }
                 }
             }
         }
@@ -163,9 +292,17 @@ final class TrainTracker {
             currentStopIndex = lastPassedIndex
             nextStopIndex = lastPassedIndex + 1
 
-            if let prev = stopTimes[lastPassedIndex], let next = stopTimes[nextStopIndex] {
-                let totalInterval = next.timeIntervalSince(prev)
-                let elapsed = now.timeIntervalSince(prev)
+            if standingAtNextStop {
+                progressBetweenStops = 1
+            } else if let prev = stopTimes[lastPassedIndex], let next = stopTimes[nextStopIndex] {
+                // The leg starts at the previous stop's departure (its time
+                // plus dwell), not its arrival. Progress past 1 clamps, which
+                // is what holds the icon at the next station between its
+                // arrival time and its inferred departure.
+                let dwell = Self.dwellSeconds(legInterval: next.timeIntervalSince(prev))
+                let departed = prev.addingTimeInterval(dwell)
+                let totalInterval = next.timeIntervalSince(departed)
+                let elapsed = now.timeIntervalSince(departed)
                 progressBetweenStops = totalInterval > 0 ? min(max(elapsed / totalInterval, 0), 1) : 0
             } else {
                 progressBetweenStops = 0
@@ -462,10 +599,45 @@ final class TrainTracker {
             activity = try Activity.request(
                 attributes: attributes,
                 content: .init(state: state, staleDate: Date().addingTimeInterval(180)),
-                pushType: nil
+                pushType: .token
             )
+            observePushToken(train: train)
         } catch {
             // Live Activity not available — in-app tracking still works
+        }
+    }
+
+    /// Streams the activity's push token (it can rotate) to the backend so
+    /// it can push updates while the app is suspended. Requires a rid — the
+    /// backend correlates TRUST movements by it; without one, tracking stays
+    /// app-driven only.
+    private func observePushToken(train: Train) {
+        pushTokenTask?.cancel()
+        guard let activity, let rid = train.rid,
+              let boardingCRS = boardingStation?.code else { return }
+        let registration = { [weak self] (token: String) async in
+            let request = LiveActivityRegistration(
+                token: token,
+                rid: rid,
+                serviceId: train.serviceId,
+                uid: train.uid,
+                boardingCrs: boardingCRS,
+                alightingCrs: self?.alightingCRS
+            )
+            for attempt in 0..<3 {
+                if (try? await APIClient.shared.registerLiveActivity(request)) != nil {
+                    await MainActor.run { self?.registeredPushToken = token }
+                    return
+                }
+                try? await Task.sleep(for: .seconds(5 << attempt))
+            }
+        }
+        pushTokenTask = Task {
+            for await tokenData in activity.pushTokenUpdates {
+                guard !Task.isCancelled else { break }
+                let token = tokenData.map { String(format: "%02x", $0) }.joined()
+                await registration(token)
+            }
         }
     }
 
