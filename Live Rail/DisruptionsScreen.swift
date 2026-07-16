@@ -243,11 +243,21 @@ struct DisruptionsScreen: View {
         .padding(.top, 20)
     }
 
+    /// The feed reports "Custom" when an operator writes its own message
+    /// instead of picking a canned status — the real wording is in the
+    /// description, so surface that rather than the literal "Custom".
+    private func displayStatus(_ toc: TOCIndicator) -> String {
+        guard toc.status == "Custom" else { return toc.status }
+        return toc.statusDescription.isEmpty ? "Disruption" : toc.statusDescription
+    }
+
     @ViewBuilder
     private func operatorRow(_ toc: TOCIndicator, expandable: Bool) -> some View {
         let brand = OperatorBrand.brand(for: toc.tocCode)
         let isExpanded = expandedTOC == toc.tocCode
-        let hasDetail = expandable && (toc.additionalInfo?.isEmpty == false || !toc.statusDescription.isEmpty)
+        let statusLine = displayStatus(toc)
+        let hasDetail = expandable && (toc.additionalInfo?.isEmpty == false
+            || (!toc.statusDescription.isEmpty && toc.statusDescription != statusLine))
 
         VStack(alignment: .leading, spacing: 0) {
             Button {
@@ -269,9 +279,10 @@ struct DisruptionsScreen: View {
                             .font(.ui(13, weight: .semibold))
                             .foregroundStyle(Theme.ink)
                             .lineLimit(1)
-                        Text(toc.status)
+                        Text(statusLine)
                             .font(.ui(11))
                             .foregroundStyle(toc.status == "Good service" ? Theme.onTimeSub : Theme.delayedText)
+                            .lineLimit(1)
                     }
                     Spacer()
                     if hasDetail {
@@ -289,7 +300,7 @@ struct DisruptionsScreen: View {
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 6) {
-                    if !toc.statusDescription.isEmpty {
+                    if !toc.statusDescription.isEmpty && toc.statusDescription != statusLine {
                         Text(toc.statusDescription)
                             .font(.ui(12))
                             .foregroundStyle(Theme.inkSoft)
