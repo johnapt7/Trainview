@@ -1,5 +1,90 @@
 import SwiftUI
 
+/// How a station row presents itself; `.nearby` adds the distance readout.
+enum StationRowStyle {
+    case nearby, search, recent, favourite
+}
+
+/// The shared station list card: ink code tags, star toggles, hairline
+/// dividers. Used by the home search results and the My Stations screen.
+struct StationListCard: View {
+    let stations: [Station]
+    let style: StationRowStyle
+    let accent: Color
+    let favouriteStore: FavouriteStationsStore
+    let onPick: (Station) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(stations.enumerated()), id: \.element.code) { index, station in
+                HStack(spacing: 0) {
+                    Button {
+                        onPick(station)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(station.code)
+                                .font(.mono(11, weight: .semibold))
+                                .tracking(0.4)
+                                .foregroundStyle(Theme.cream)
+                                .frame(width: 42, height: 42)
+                                .background(Theme.ink)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(station.name)
+                                    .font(.display(18))
+                                    .tracking(-0.1)
+                                    .foregroundStyle(Theme.ink)
+                                    .lineLimit(1)
+                                if station.isInterchange {
+                                    Text("Interchange station")
+                                        .font(.ui(11))
+                                        .foregroundStyle(Theme.inkMute)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            if case .nearby = style, let dist = station.dist {
+                                Text(dist < 1 ? String(format: "%.0fm", dist * 1000) : String(format: "%.1fkm", dist))
+                                    .font(.mono(12, weight: .semibold))
+                                    .tracking(-0.1)
+                                    .foregroundStyle(Theme.ink)
+                            }
+                        }
+                        // Rows have no background fill, so without an explicit
+                        // shape only the drawn pixels are tappable.
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            favouriteStore.toggle(station)
+                        }
+                    } label: {
+                        Image(systemName: favouriteStore.contains(station) ? "star.fill" : "star")
+                            .font(.system(size: 14))
+                            .foregroundStyle(favouriteStore.contains(station) ? accent : Theme.inkMute)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 6)
+                .padding(.vertical, 4)
+                .overlay(alignment: .bottom) {
+                    if index < stations.count - 1 {
+                        Divider().overlay(Theme.line)
+                    }
+                }
+            }
+        }
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+}
+
 struct StatusPill: View {
     let status: TrainStatus
     let label: String

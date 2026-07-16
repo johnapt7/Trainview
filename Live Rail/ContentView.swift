@@ -3,6 +3,7 @@ import SwiftUI
 enum AppScreen {
     case welcome
     case home
+    case stations
     case departures
     case journey
 }
@@ -13,6 +14,9 @@ struct ContentView: View {
     @State private var activeTrain: Train?
     @State private var activeStation: Station = Station(code: "KGX", name: "King's Cross")
     @State private var pendingJourneyFilter: Station?
+    /// Where the departure board's back button returns to — home normally,
+    /// My Stations when the board was opened from there.
+    @State private var boardReturnScreen: AppScreen = .home
     @State private var tracker = TrainTracker()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -35,6 +39,7 @@ struct ContentView: View {
                     onPickStation: { station in
                         activeStation = station
                         pendingJourneyFilter = nil
+                        boardReturnScreen = .home
                         withAnimation(.easeInOut(duration: 0.25)) {
                             screen = .departures
                         }
@@ -42,6 +47,7 @@ struct ContentView: View {
                     onPickJourney: { journey in
                         activeStation = journey.origin
                         pendingJourneyFilter = journey.destination
+                        boardReturnScreen = .home
                         withAnimation(.easeInOut(duration: 0.25)) {
                             screen = .departures
                         }
@@ -56,6 +62,28 @@ struct ContentView: View {
                         }
                         withAnimation(.easeInOut(duration: 0.25)) {
                             screen = .journey
+                        }
+                    },
+                    onOpenMyStations: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            screen = .stations
+                        }
+                    }
+                )
+            case .stations:
+                MyStationsScreen(
+                    accent: accent,
+                    onPickStation: { station in
+                        activeStation = station
+                        pendingJourneyFilter = nil
+                        boardReturnScreen = .stations
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            screen = .departures
+                        }
+                    },
+                    onBack: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            screen = .home
                         }
                     }
                 )
@@ -72,7 +100,7 @@ struct ContentView: View {
                     },
                     onBack: {
                         withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .home
+                            screen = boardReturnScreen
                         }
                     }
                 )

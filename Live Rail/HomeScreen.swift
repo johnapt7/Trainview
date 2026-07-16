@@ -8,6 +8,7 @@ struct HomeScreen: View {
     let onPickStation: (Station) -> Void
     let onPickJourney: (RecentJourney) -> Void
     let onOpenTrackedTrain: () -> Void
+    let onOpenMyStations: () -> Void
 
     @State private var fromQuery = ""
     @State private var toQuery = ""
@@ -16,11 +17,6 @@ struct HomeScreen: View {
     @State private var searchResults: [Station]?
     @State private var searchError: Bool = false
     @State private var searchTask: Task<Void, Never>?
-    @State private var nearbyStations: [Station] = []
-    @State private var nearbyDidLoad = false
-    @State private var nearbyError = false
-    @State private var nearbyTask: Task<Void, Never>?
-    @State private var locationManager = LocationManager()
     @State private var recentStore = RecentStationsStore()
     @State private var favouriteStore = FavouriteStationsStore()
     @State private var journeysStore = RecentJourneysStore()
@@ -81,12 +77,9 @@ struct HomeScreen: View {
                             journeysSection
                         }
                         if !favouriteStore.stations.isEmpty {
-                            favouritesSection
+                            favouriteChipsRow
                         }
-                        nearbySection
-                        if !recentStore.stations.isEmpty {
-                            recentSection
-                        }
+                        myStationsRow
                     }
                     footerView
                 }
@@ -96,24 +89,6 @@ struct HomeScreen: View {
         .animation(.easeOut(duration: 0.2), value: showGreeting)
         .animation(.easeOut(duration: 0.2), value: fromStation)
         .background(Theme.cream)
-        .task {
-            if locationManager.hasPermission {
-                if let coord = locationManager.location {
-                    if !nearbyDidLoad {
-                        fetchNearby(lat: coord.latitude, lng: coord.longitude)
-                    }
-                } else {
-                    locationManager.requestLocation()
-                }
-            } else {
-                locationManager.requestPermission()
-            }
-        }
-        .onChange(of: locationManager.location) { _, coord in
-            if let coord, !nearbyDidLoad {
-                fetchNearby(lat: coord.latitude, lng: coord.longitude)
-            }
-        }
         .onChange(of: fromQuery) { _, newValue in
             debounceSearch(newValue)
         }
@@ -158,37 +133,6 @@ struct HomeScreen: View {
                 searchError = true
                 searchResults = []
             }
-        }
-    }
-
-    private func fetchNearby(lat: Double, lng: Double) {
-        nearbyTask?.cancel()
-        nearbyError = false
-        nearbyTask = Task {
-            do {
-                let wrapper = try await APIClient.shared.getNearbyStations(lat: lat, lng: lng, limit: 5)
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.3)) {
-                    nearbyStations = (wrapper.stations ?? []).map { Station(from: $0) }
-                    nearbyDidLoad = true
-                    nearbyError = false
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled else { return }
-                nearbyStations = []
-                nearbyDidLoad = false
-                nearbyError = true
-            }
-        }
-    }
-
-    private func retryNearby() {
-        if let coord = locationManager.location {
-            fetchNearby(lat: coord.latitude, lng: coord.longitude)
-        } else {
-            locationManager.requestLocation()
         }
     }
 
@@ -461,7 +405,13 @@ struct HomeScreen: View {
                 .background(Theme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             } else {
-                stationList(visible, style: .search)
+                StationListCard(
+                    stations: visible,
+                    style: .search,
+                    accent: accent,
+                    favouriteStore: favouriteStore,
+                    onPick: pickStation
+                )
             }
         }
         .padding(.horizontal, 18)
@@ -620,262 +570,74 @@ struct HomeScreen: View {
         .padding(.top, 24)
     }
 
-    // MARK: - Favourites
+    // MARK: - My stations
 
-    private var favouritesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Favourites")
-                    .font(.display(22))
-                    .tracking(-0.2)
-                Spacer()
-                HStack(spacing: 5) {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 8))
-                    Text("\(favouriteStore.stations.count) saved")
-                        .font(.mono(10, weight: .semibold))
-                        .tracking(0.4)
-                }
-                .foregroundStyle(Theme.ink)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(accent)
-                .clipShape(Capsule())
-            }
-            stationList(favouriteStore.stations, style: .favourite)
-        }
-        .id("favourites")
-        .padding(.horizontal, 18)
-        .padding(.top, 24)
-    }
-
-    // MARK: - Nearby
-
-    private var nearbySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack {
-                    Text("Nearby stations")
-                        .font(.display(22))
-                        .tracking(-0.2)
-                    Spacer()
-                    if !nearbyStations.isEmpty {
-                        HStack(spacing: 5) {
-                            Image(systemName: "mappin")
-                                .font(.system(size: 8))
-                            Text("Near you")
-                                .font(.mono(10, weight: .semibold))
-                                .tracking(0.4)
+    /// Compact strip of favourite stations: one tap opens that board.
+    private var favouriteChipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(favouriteStore.stations.prefix(8), id: \.code) { station in
+                    Button {
+                        onPickStation(station)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(accent)
+                            Text(station.name)
+                                .font(.ui(13, weight: .semibold))
+                                .foregroundStyle(Theme.ink)
+                                .lineLimit(1)
                         }
-                        .foregroundStyle(Theme.ink)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(accent)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Theme.card)
                         .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Theme.line, lineWidth: 1))
                     }
+                    .buttonStyle(.plain)
                 }
-                Text("Based on your location")
-                    .font(.mono(11, weight: .medium))
-                    .tracking(0.3)
-                    .foregroundStyle(Theme.inkMute)
             }
-
-            if !locationManager.hasPermission {
-                locationPrompt
-            } else if nearbyError {
-                nearbyErrorCard
-            } else if !nearbyDidLoad {
-                loadingCard
-            } else if nearbyStations.isEmpty {
-                VStack(spacing: 4) {
-                    Text("No stations nearby")
-                        .font(.display(18))
-                    Text("Try searching by name or code")
-                        .font(.ui(11))
-                        .foregroundStyle(Theme.inkMute)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 28)
-                .background(Theme.card)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-            } else {
-                stationList(nearbyStations, style: .nearby)
-            }
+            .padding(.horizontal, 18)
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 24)
+        .padding(.top, 20)
     }
 
-    private var locationPrompt: some View {
-        Button {
-            if locationManager.isDenied {
-                // The system prompt can't be shown again after a denial —
-                // send the user to the app's page in Settings instead.
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            } else {
-                locationManager.requestPermission()
-            }
-        } label: {
+    /// The door to the full stations view (favourites, nearby, recent).
+    private var myStationsRow: some View {
+        Button(action: onOpenMyStations) {
             HStack(spacing: 12) {
-                Image(systemName: "location")
-                    .font(.system(size: 16))
+                Image(systemName: "star.square.on.square")
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.ink)
                     .frame(width: 42, height: 42)
                     .background(accent)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(locationManager.isDenied ? "Location is off" : "Enable location")
-                        .font(.ui(14, weight: .semibold))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("My stations")
+                        .font(.display(18))
+                        .tracking(-0.1)
                         .foregroundStyle(Theme.ink)
-                    Text(locationManager.isDenied ? "Open Settings to allow location access" : "Find stations near you")
+                    Text("Favourites, nearby and recent")
                         .font(.ui(11))
                         .foregroundStyle(Theme.inkMute)
                 }
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.inkMute)
             }
-            .padding(14)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
             .background(Theme.card)
             .clipShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
-    }
-
-    private var loadingCard: some View {
-        HStack(spacing: 12) {
-            ProgressView()
-                .tint(Theme.ink)
-            Text("Finding nearby stations...")
-                .font(.ui(13))
-                .foregroundStyle(Theme.inkSoft)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private var nearbyErrorCard: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "wifi.slash")
-                .font(.system(size: 18))
-                .foregroundStyle(Theme.inkMute)
-                .padding(.bottom, 2)
-            Text("Couldn't load nearby stations")
-                .font(.display(18))
-            Text("Check your connection and try again")
-                .font(.ui(11))
-                .foregroundStyle(Theme.inkMute)
-            Button {
-                retryNearby()
-            } label: {
-                Text("Try again")
-                    .font(.ui(13, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
-                    .background(accent)
-                    .clipShape(Capsule())
-            }
-            .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    // MARK: - Recent
-
-    private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Recent")
-                .font(.display(22))
-                .tracking(-0.2)
-            stationList(recentStore.stations, style: .recent)
-        }
         .padding(.horizontal, 18)
-        .padding(.top, 24)
-    }
-
-    // MARK: - Station List
-
-    private enum StationRowStyle {
-        case nearby, search, recent, favourite
-    }
-
-    private func stationList(_ stations: [Station], style: StationRowStyle) -> some View {
-        VStack(spacing: 0) {
-            ForEach(Array(stations.enumerated()), id: \.element.code) { index, station in
-                HStack(spacing: 0) {
-                    Button {
-                        pickStation(station)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Text(station.code)
-                                .font(.mono(11, weight: .semibold))
-                                .tracking(0.4)
-                                .foregroundStyle(Theme.cream)
-                                .frame(width: 42, height: 42)
-                                .background(Theme.ink)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(station.name)
-                                    .font(.display(18))
-                                    .tracking(-0.1)
-                                    .foregroundStyle(Theme.ink)
-                                    .lineLimit(1)
-                                if station.isInterchange {
-                                    Text("Interchange station")
-                                        .font(.ui(11))
-                                        .foregroundStyle(Theme.inkMute)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                            if case .nearby = style, let dist = station.dist {
-                                Text(dist < 1 ? String(format: "%.0fm", dist * 1000) : String(format: "%.1fkm", dist))
-                                    .font(.mono(12, weight: .semibold))
-                                    .tracking(-0.1)
-                                    .foregroundStyle(Theme.ink)
-                            }
-                        }
-                        // Rows have no background fill, so without an explicit
-                        // shape only the drawn pixels are tappable.
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            favouriteStore.toggle(station)
-                        }
-                    } label: {
-                        Image(systemName: favouriteStore.contains(station) ? "star.fill" : "star")
-                            .font(.system(size: 14))
-                            .foregroundStyle(favouriteStore.contains(station) ? accent : Theme.inkMute)
-                            .frame(width: 36, height: 36)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.leading, 14)
-                .padding(.trailing, 6)
-                .padding(.vertical, 4)
-                .overlay(alignment: .bottom) {
-                    if index < stations.count - 1 {
-                        Divider().overlay(Theme.line)
-                    }
-                }
-            }
-        }
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.top, 14)
     }
 
     // MARK: - Network Status
