@@ -4,8 +4,10 @@ import UIKit
 
 struct HomeScreen: View {
     let accent: Color
+    let tracker: TrainTracker
     let onPickStation: (Station) -> Void
     let onPickJourney: (RecentJourney) -> Void
+    let onOpenTrackedTrain: () -> Void
 
     @State private var fromQuery = ""
     @State private var toQuery = ""
@@ -68,6 +70,7 @@ struct HomeScreen: View {
             }
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
+                    trackedTrainSection
                     if !tocIndicators.isEmpty {
                         networkStatusRow
                     }
@@ -470,6 +473,83 @@ struct HomeScreen: View {
     /// One-tap shortcuts to the boards the user actually uses: each row opens
     /// the origin's departure board pre-filtered to the destination. Rows are
     /// recorded automatically when a board is filtered by destination.
+    // MARK: - Tracked train
+
+    /// Live journey pinned to the top of the home screen while tracking is
+    /// active. Tapping it returns to the journey screen. Stays visible during
+    /// station search so the running journey is never more than one tap away.
+    @ViewBuilder
+    private var trackedTrainSection: some View {
+        if tracker.isTracking, let train = tracker.trackedTrain {
+            Button(action: onOpenTrackedTrain) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "tram.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                            .frame(width: 42, height: 42)
+                            .background(accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("To \(train.destination)")
+                                .font(.display(18))
+                                .tracking(-0.1)
+                                .foregroundStyle(Theme.ink)
+                                .lineLimit(1)
+                            Text(trackedSubtitle(for: train))
+                                .font(.ui(11))
+                                .foregroundStyle(Theme.inkMute)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        LivePulseBadge()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.inkMute)
+                    }
+
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Theme.line)
+                            Capsule()
+                                .fill(accent)
+                                .frame(width: max(6, geo.size.width * tracker.overallProgress))
+                        }
+                    }
+                    .frame(height: 5)
+                    .animation(.linear(duration: 1), value: tracker.overallProgress)
+                }
+                .padding(14)
+                .background(Theme.card)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(Theme.lineStrong, lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 16))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
+        }
+    }
+
+    private func trackedSubtitle(for train: Train) -> String {
+        if tracker.isBoarding {
+            return "Boarding · departs \(train.time)"
+        }
+        if !tracker.nextStopName.isEmpty {
+            if !tracker.nextStopExpectedTime.isEmpty {
+                return "Next stop \(tracker.nextStopName) · \(tracker.nextStopExpectedTime)"
+            }
+            return "Next stop \(tracker.nextStopName)"
+        }
+        return "Tracking live"
+    }
+
     private var journeysSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
@@ -963,5 +1043,28 @@ struct NetworkStatusSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .padding(.horizontal, 18)
         }
+    }
+}
+
+/// Pulsing green dot + "LIVE" tag for the tracked-train card.
+private struct LivePulseBadge: View {
+    @State private var pulsing = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(Theme.perfGood)
+                .frame(width: 7, height: 7)
+                .opacity(pulsing ? 0.35 : 1)
+                .animation(
+                    .easeInOut(duration: 0.9).repeatForever(autoreverses: true),
+                    value: pulsing
+                )
+            Text("LIVE")
+                .font(.mono(10, weight: .semibold))
+                .tracking(0.6)
+                .foregroundStyle(Theme.inkMute)
+        }
+        .onAppear { pulsing = true }
     }
 }

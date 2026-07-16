@@ -19,10 +19,11 @@ enum Theme {
     static let inkSoft = adaptive(0x2A4754, 0xBECBD1)
     static let inkMute = adaptive(0x6E8893, 0x8AA1AB)
 
-    /// Warm sand — deliberately outside every operator's brand palette
-    /// (reds, blues, purples, greens) so their colours never clash with it.
-    /// Darker in dark mode so cream text stays legible on accent chips.
-    static let accent = adaptive(0xD9C48E, 0x75623B)
+    /// Sky-blue teal, a shade darker than the original for better contrast.
+    /// Operator chips render in a single neutral (see OperatorBrand), so the
+    /// accent never competes with brand colours despite being blue.
+    /// Darker teal in dark mode so cream text stays legible on accent chips.
+    static let accent = adaptive(0x5CA3B9, 0x316D7E)
 
     // Chip colours used only inside always-light contexts (StatusPill).
     static let onTimeBg = Color(hex: 0xC9E265)

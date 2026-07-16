@@ -222,6 +222,39 @@ final class APIClient {
 
     // MARK: - Movements
 
+    // MARK: - Live Activity push registration
+
+    func registerLiveActivity(_ registration: LiveActivityRegistration) async throws {
+        try await postIgnoringResponse("/liveactivity/register", body: registration)
+    }
+
+    func unregisterLiveActivity(token: String) async throws {
+        try await postIgnoringResponse("/liveactivity/unregister", body: ["token": token])
+    }
+
+    /// POST with a JSON body where only the status code matters.
+    private func postIgnoringResponse<Body: Encodable>(_ path: String, body: Body) async throws {
+        guard let url = URL(string: "\(baseURL)\(path)") else {
+            throw APIError.invalidURL
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let response: URLResponse
+        do {
+            (_, response) = try await session.data(for: request)
+        } catch {
+            throw APIError.networkError(error)
+        }
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            throw APIError.httpError(statusCode: status, apiError: nil)
+        }
+    }
+
     func getRouteGeometry(crsCodes: [String]) async throws -> RouteGeometryResponse {
         try await request(
             "/route/geometry",

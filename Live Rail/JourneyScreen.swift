@@ -783,8 +783,13 @@ struct JourneyScreen: View {
                 if isTrackingThis { tracker.stopTracking() } else { showTrackingSheet = true }
             } label: {
                 HStack(spacing: 8) {
-                    LiveDotColored(color: Theme.trackPillDelayedFg)
-                    Text(isTrackingThis ? "Tracking" : "Delayed")
+                    if isTrackingThis {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 9, weight: .bold))
+                    } else {
+                        LiveDotColored(color: Theme.trackPillDelayedFg)
+                    }
+                    Text(isTrackingThis ? "Stop tracking" : "Delayed")
                         .font(.ui(11, weight: .semibold))
                     Text(train.statusNote)
                         .font(.mono(10, weight: .medium))
@@ -811,8 +816,13 @@ struct JourneyScreen: View {
                 if isTrackingThis { tracker.stopTracking() } else { showTrackingSheet = true }
             } label: {
                 HStack(spacing: 8) {
-                    LiveDotColored(color: accent)
-                    Text(isTrackingThis ? "Tracking" : "Track live")
+                    if isTrackingThis {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 9, weight: .bold))
+                    } else {
+                        LiveDotColored(color: accent)
+                    }
+                    Text(isTrackingThis ? "Stop tracking" : "Track live")
                         .font(.ui(11, weight: .semibold))
                     Text(train.statusNote)
                         .font(.mono(10, weight: .medium))

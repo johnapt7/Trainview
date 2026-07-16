@@ -379,18 +379,13 @@ struct RouteMapContent: MapContent {
     let labelAll: Bool
 
     var body: some MapContent {
+        // Route ahead: solid like the covered line, told apart by colour —
+        // muted grey ahead, accent behind the train.
         if split.remaining.count >= 2 {
-            if split.marker != nil {
-                MapPolyline(coordinates: split.remaining)
-                    .stroke(Theme.inkMute.opacity(0.55), style: StrokeStyle(
-                        lineWidth: 2, lineCap: .round, lineJoin: .round, dash: [4, 5]
-                    ))
-            } else {
-                MapPolyline(coordinates: split.remaining)
-                    .stroke(Theme.inkMute.opacity(0.7), style: StrokeStyle(
-                        lineWidth: 2, lineCap: .round, lineJoin: .round
-                    ))
-            }
+            MapPolyline(coordinates: split.remaining)
+                .stroke(Theme.inkMute.opacity(0.7), style: StrokeStyle(
+                    lineWidth: 2, lineCap: .round, lineJoin: .round
+                ))
         }
         if split.covered.count >= 2 {
             MapPolyline(coordinates: split.covered)

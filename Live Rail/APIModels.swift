@@ -400,6 +400,17 @@ struct RouteGeometryLeg: Decodable {
     let coords: [[Double]]
 }
 
+// MARK: - Live Activity Registration
+
+struct LiveActivityRegistration: Encodable {
+    let token: String
+    let rid: String
+    let serviceId: String
+    let uid: String?
+    let boardingCrs: String
+    let alightingCrs: String?
+}
+
 // MARK: - API Error
 
 struct APIErrorResponse: Codable {

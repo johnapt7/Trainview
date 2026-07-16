@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var activeStation: Station = Station(code: "KGX", name: "King's Cross")
     @State private var pendingJourneyFilter: Station?
     @State private var tracker = TrainTracker()
+    @Environment(\.scenePhase) private var scenePhase
 
     private let accent = Theme.accent
 
@@ -30,6 +31,7 @@ struct ContentView: View {
             case .home:
                 HomeScreen(
                     accent: accent,
+                    tracker: tracker,
                     onPickStation: { station in
                         activeStation = station
                         pendingJourneyFilter = nil
@@ -42,6 +44,18 @@ struct ContentView: View {
                         pendingJourneyFilter = journey.destination
                         withAnimation(.easeInOut(duration: 0.25)) {
                             screen = .departures
+                        }
+                    },
+                    onOpenTrackedTrain: {
+                        // Mirrors the Live Activity deep link: land on the
+                        // tracked journey with its original boarding station.
+                        guard let train = tracker.trackedTrain else { return }
+                        activeTrain = train
+                        if let boarding = tracker.boardingStation {
+                            activeStation = boarding
+                        }
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            screen = .journey
                         }
                     }
                 )
@@ -90,6 +104,9 @@ struct ContentView: View {
             if hasSeenWelcome {
                 screen = .home
             }
+            // Pick tracking back up after a relaunch so a live journey (and
+            // its Live Activity) survives force-quits and Xcode reruns.
+            Task { _ = await tracker.resumeIfNeeded() }
             #if DEBUG
             // Testing hook (debug builds only):
             // `simctl launch <udid> <bundle> -openBoard <CRS>` jumps straight
@@ -107,15 +124,27 @@ struct ContentView: View {
             #endif
         }
         .onOpenURL { url in
-            guard url.scheme == "liverail",
-                  url.host == "journey",
-                  let train = tracker.trackedTrain else { return }
-            activeTrain = train
-            if let boarding = tracker.boardingStation {
-                activeStation = boarding
+            guard url.scheme == "liverail", url.host == "journey" else { return }
+            // Restore tracking first if the app was relaunched — the tap on
+            // the Live Activity must always land on its journey.
+            Task {
+                guard await tracker.resumeIfNeeded(),
+                      let train = tracker.trackedTrain else { return }
+                activeTrain = train
+                if let boarding = tracker.boardingStation {
+                    activeStation = boarding
+                }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    screen = .journey
+                }
             }
-            withAnimation(.easeInOut(duration: 0.25)) {
-                screen = .journey
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Returning to the foreground: refresh immediately instead of
+            // waiting out the poll loop's sleep, so the journey screen and
+            // Live Activity snap up to date.
+            if phase == .active {
+                tracker.pollNow()
             }
         }
     }

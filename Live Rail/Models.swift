@@ -123,6 +123,37 @@ struct Train: Identifiable {
         self.rollingStock = nil
     }
 
+    /// Rebuilds a previously tracked train from a persisted snapshot. Live
+    /// details (status, stops, times) are refreshed by the tracker's first
+    /// poll, so only identity and display basics are restored here.
+    init(restoredId: String, time: String, origin: String, destination: String,
+         destinationCrs: String, platform: String, operator: String,
+         operatorCode: String, rid: String?, uid: String?) {
+        self.id = restoredId
+        self.serviceId = restoredId
+        self.time = time
+        self.destination = destination
+        self.destinationCrs = destinationCrs
+        self.origin = origin
+        self.via = ""
+        self.platform = platform
+        self.isPredictedPlatform = false
+        self.operator = `operator`
+        self.operatorCode = operatorCode
+        self.status = .onTime
+        self.statusNote = "On time"
+        self.type = ""
+        self.carriages = nil
+        self.cancelReason = nil
+        self.delayReason = nil
+        self.duration = ""
+        self.stops = []
+        self.rid = rid
+        self.uid = uid
+        self.headcode = nil
+        self.rollingStock = nil
+    }
+
     init(from service: BoardService) {
         self.id = service.serviceId
         self.serviceId = service.serviceId
