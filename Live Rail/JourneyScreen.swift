@@ -19,6 +19,7 @@ struct JourneyScreen: View {
     @State private var loadError: String?
     @State private var reliability: ReliabilityStats?
     @State private var stationPins: [StationPin] = []
+    @State private var legPaths: [String: [CLLocationCoordinate2D]] = [:]
     @State private var isLoadingMap = true
     @State private var movements: [MovementEvent] = []
     @State private var coaches: [CoachDisplay] = []
@@ -88,8 +89,11 @@ struct JourneyScreen: View {
                         stopsSection
                         JourneyMapSection(
                             stationPins: stationPins,
+                            legPaths: legPaths,
                             isLoading: isLoadingMap,
-                            accent: accent
+                            accent: accent,
+                            tracker: tracker,
+                            serviceId: train.serviceId
                         )
                         .padding(.bottom, 48)
                     }
@@ -530,6 +534,7 @@ struct JourneyScreen: View {
             guard let coord = coords[entry.crs] else { continue }
             pins.append(StationPin(
                 id: "\(entry.crs)-\(i)",
+                crs: entry.crs,
                 name: entry.name,
                 coordinate: CLLocationCoordinate2D(latitude: coord.lat, longitude: coord.lng),
                 type: entry.type
@@ -539,6 +544,29 @@ struct JourneyScreen: View {
         withAnimation(.easeIn(duration: 0.3)) {
             stationPins = pins
             isLoadingMap = false
+        }
+        await loadRouteGeometry(for: pins)
+    }
+
+    /// Real track shapes for each leg, keyed "FROM-TO" in travel direction.
+    /// Best-effort: on any failure the map keeps its straight-line fallback.
+    private func loadRouteGeometry(for pins: [StationPin]) async {
+        guard pins.count >= 2 else { return }
+        guard let response = try? await APIClient.shared.getRouteGeometry(crsCodes: pins.map(\.crs)) else {
+            return
+        }
+        var paths: [String: [CLLocationCoordinate2D]] = [:]
+        // Any routed source counts ("nwr" = Network Rail track model,
+        // "osm" = OpenStreetMap fallback) — only "straight" legs are skipped
+        // since the map already draws straight fallbacks itself.
+        for leg in response.legs where leg.source != "straight" && leg.coords.count >= 2 {
+            paths["\(leg.from)-\(leg.to)"] = leg.coords.compactMap { pair in
+                pair.count == 2 ? CLLocationCoordinate2D(latitude: pair[0], longitude: pair[1]) : nil
+            }
+        }
+        guard !paths.isEmpty else { return }
+        withAnimation(.easeIn(duration: 0.3)) {
+            legPaths = paths
         }
     }
 
@@ -939,9 +967,18 @@ struct JourneyScreen: View {
 
     // MARK: - Facts
 
+    /// Carriage count from the richest source available: the departure
+    /// board's length, then the service details' length, then counting the
+    /// coaches in the live formation diagram.
+    private var carriageCount: Int? {
+        train.carriages
+            ?? details?.length
+            ?? (coaches.isEmpty ? nil : coaches.count)
+    }
+
     private var factsRow: some View {
         HStack(spacing: 8) {
-            FactTile(icon: "train.side.front.car", value: train.carriages.map { "\($0)" } ?? "—", label: "Carriages")
+            FactTile(icon: "train.side.front.car", value: carriageCount.map { "\($0)" } ?? "—", label: "Carriages")
             FactTile(icon: "clock", value: duration.isEmpty ? "—" : duration, label: "Journey")
             FactTile(icon: "mappin.and.ellipse", value: personalStopCount < 1 ? "—" : "\(personalStopCount)", label: "Stops")
         }
@@ -1068,7 +1105,7 @@ struct JourneyScreen: View {
                 let onTimePct = Int(stats.onTimePercent)
                 let tone: String = onTimePct >= 80 ? "good" : onTimePct >= 60 ? "ok" : "bad"
 
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(spacing: 10) {
                     Text("ON-TIME PERFORMANCE")
                         .font(.mono(9, weight: .semibold))
                         .tracking(1.3)
@@ -1076,16 +1113,22 @@ struct JourneyScreen: View {
 
                     Text("On time \(Text("\(onTimePct)% of services").font(.ui(17, weight: .semibold)).foregroundColor(tone == "good" ? Theme.perfGood : tone == "bad" ? Theme.perfBad : Theme.ink)) \(Text("over \(stats.period)").font(.mono(14, weight: .medium)).foregroundColor(Theme.inkSoft))")
                         .font(.ui(17))
+                        .multilineTextAlignment(.center)
 
-                    HStack(spacing: 16) {
+                    // Equal thirds so the counters sit balanced across the
+                    // card instead of clustering at the leading edge.
+                    HStack(spacing: 0) {
                         StatBadge(value: "\(stats.onTimeServices)", label: "On time", color: Theme.perfGood)
+                            .frame(maxWidth: .infinity)
                         StatBadge(value: "\(stats.delayedServices)", label: "Delayed", color: Theme.delayedText)
+                            .frame(maxWidth: .infinity)
                         StatBadge(value: "\(stats.cancelledServices)", label: "Cancelled", color: Theme.cancelledText)
+                            .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 16)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity)
                 .background(Theme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .padding(.horizontal, 18)
@@ -1224,7 +1267,7 @@ private struct FactTile: View {
     let label: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: 15))
                 .foregroundStyle(Theme.ink)
@@ -1239,7 +1282,7 @@ private struct FactTile: View {
         .padding(.horizontal, 8)
         .padding(.top, 12)
         .padding(.bottom, 11)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
         .background(Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }

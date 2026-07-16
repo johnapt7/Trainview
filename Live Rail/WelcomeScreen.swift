@@ -56,7 +56,7 @@ struct WelcomeScreen: View {
         HStack(spacing: 8) {
             Image(systemName: "tram.fill")
                 .font(.system(size: 16))
-            Text("LIVE RAIL")
+            Text("TRAINVIEW")
                 .font(.mono(11, weight: .semibold))
                 .tracking(1.5)
         }

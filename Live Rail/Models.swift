@@ -229,6 +229,7 @@ enum FilterMode: String, CaseIterable {
 
 struct StationPin: Identifiable {
     let id: String
+    let crs: String
     let name: String
     let coordinate: CLLocationCoordinate2D
     let type: StopType

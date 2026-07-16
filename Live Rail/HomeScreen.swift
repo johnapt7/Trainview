@@ -7,7 +7,10 @@ struct HomeScreen: View {
     let onPickStation: (Station) -> Void
     let onPickJourney: (RecentJourney) -> Void
 
-    @State private var query = ""
+    @State private var fromQuery = ""
+    @State private var toQuery = ""
+    @State private var fromStation: Station?
+    @State private var toStation: Station?
     @State private var searchResults: [Station]?
     @State private var searchError: Bool = false
     @State private var searchTask: Task<Void, Never>?
@@ -22,7 +25,8 @@ struct HomeScreen: View {
     @State private var showFAQ = false
     @State private var tocIndicators: [TOCIndicator] = []
     @State private var showNetworkStatus = false
-    @FocusState private var searchFocused: Bool
+    private enum SlotField: Hashable { case from, to }
+    @FocusState private var focusedField: SlotField?
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -31,16 +35,37 @@ struct HomeScreen: View {
         return "Good evening"
     }
 
+    private var showGreeting: Bool {
+        focusedField == nil && fromQuery.isEmpty && toQuery.isEmpty
+            && fromStation == nil && toStation == nil
+    }
+
+    /// Which slot a tapped station should fill. Follows the focused field;
+    /// with no field focused, fills the first empty slot (From before To).
+    private var activeSlot: SlotField {
+        if let focusedField { return focusedField }
+        return fromStation == nil ? .from : .to
+    }
+
+    private var activeQuery: String {
+        activeSlot == .to ? toQuery : fromQuery
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             pinnedTopBar
-            if !searchFocused && query.isEmpty {
+            if showGreeting {
                 greetingHeader
             }
-            searchBar
+            journeyPlanner
                 .padding(.horizontal, 18)
-                .padding(.top, searchFocused || !query.isEmpty ? 4 : 0)
+                .padding(.top, showGreeting ? 0 : 4)
                 .padding(.bottom, 10)
+            if fromStation != nil && toStation == nil {
+                viewAllDeparturesButton
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 10)
+            }
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     if !tocIndicators.isEmpty {
@@ -65,7 +90,8 @@ struct HomeScreen: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
-        .animation(.easeOut(duration: 0.2), value: searchFocused)
+        .animation(.easeOut(duration: 0.2), value: showGreeting)
+        .animation(.easeOut(duration: 0.2), value: fromStation)
         .background(Theme.cream)
         .task {
             if locationManager.hasPermission {
@@ -85,8 +111,15 @@ struct HomeScreen: View {
                 fetchNearby(lat: coord.latitude, lng: coord.longitude)
             }
         }
-        .onChange(of: query) { _, newValue in
+        .onChange(of: fromQuery) { _, newValue in
             debounceSearch(newValue)
+        }
+        .onChange(of: toQuery) { _, newValue in
+            debounceSearch(newValue)
+        }
+        .onChange(of: focusedField) { _, _ in
+            // Switching fields swaps which query drives the results list.
+            debounceSearch(activeQuery)
         }
         .sheet(isPresented: $showFAQ) {
             FAQSheet()
@@ -157,8 +190,55 @@ struct HomeScreen: View {
     }
 
     private func pickStation(_ station: Station) {
+        switch activeSlot {
+        case .from: pickFrom(station)
+        case .to: pickTo(station)
+        }
+    }
+
+    private func pickFrom(_ station: Station) {
+        guard station.code != toStation?.code else { return }
         recentStore.add(station)
-        onPickStation(station)
+        clearQueries()
+        if let to = toStation {
+            startJourney(from: station, to: to)
+        } else {
+            fromStation = station
+            focusedField = .to
+        }
+    }
+
+    private func pickTo(_ station: Station) {
+        guard station.code != fromStation?.code else { return }
+        clearQueries()
+        if let from = fromStation {
+            startJourney(from: from, to: station)
+        } else {
+            toStation = station
+            focusedField = .from
+        }
+    }
+
+    /// Both ends chosen: record the journey and open the origin's board
+    /// already filtered to the destination (same path as a saved journey).
+    private func startJourney(from: Station, to: Station) {
+        focusedField = nil
+        journeysStore.add(origin: from, destination: to)
+        onPickJourney(RecentJourney(origin: from, destination: to))
+    }
+
+    private func viewAllDepartures() {
+        guard let from = fromStation else { return }
+        focusedField = nil
+        onPickStation(from)
+    }
+
+    private func clearQueries() {
+        searchTask?.cancel()
+        fromQuery = ""
+        toQuery = ""
+        searchResults = nil
+        searchError = false
     }
 
     // MARK: - Header
@@ -170,7 +250,7 @@ struct HomeScreen: View {
         HStack {
             Color.clear.frame(width: 38, height: 38)
             Spacer()
-            Text("LIVE RAIL")
+            Text("TRAINVIEW")
                 .font(.mono(11, weight: .semibold))
                 .tracking(2)
                 .foregroundStyle(Theme.ink)
@@ -201,22 +281,76 @@ struct HomeScreen: View {
         .transition(.opacity.combined(with: .offset(y: -10)))
     }
 
-    private var searchBar: some View {
+    private var plannerActive: Bool {
+        focusedField != nil || !fromQuery.isEmpty || !toQuery.isEmpty
+            || fromStation != nil || toStation != nil
+    }
+
+    private var journeyPlanner: some View {
+        VStack(spacing: 0) {
+            slotRow(
+                slot: .from,
+                icon: "smallcircle.filled.circle",
+                placeholder: "From — station name or code",
+                station: fromStation,
+                query: $fromQuery,
+                onClear: {
+                    fromStation = nil
+                    focusedField = .from
+                }
+            )
+            Divider()
+                .overlay(Theme.line)
+                .padding(.leading, 40)
+            slotRow(
+                slot: .to,
+                icon: "mappin",
+                placeholder: "To — optional",
+                station: toStation,
+                query: $toQuery,
+                onClear: {
+                    toStation = nil
+                    focusedField = .to
+                }
+            )
+        }
+        .background(plannerActive ? Theme.searchField : Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(plannerActive ? Theme.ink : .clear, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func slotRow(
+        slot: SlotField,
+        icon: String,
+        placeholder: String,
+        station: Station?,
+        query: Binding<String>,
+        onClear: @escaping () -> Void
+    ) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 14))
-                .foregroundStyle(searchFocused || !query.isEmpty ? Theme.ink : Theme.inkMute)
-            TextField("Search by station name or code", text: $query)
-                .font(.ui(14))
-                .foregroundStyle(Theme.ink)
-                .focused($searchFocused)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                    searchResults = nil
-                } label: {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundStyle(focusedField == slot || station != nil ? Theme.ink : Theme.inkMute)
+                .frame(width: 16)
+            if let station {
+                Text(station.code)
+                    .font(.mono(10, weight: .semibold))
+                    .tracking(0.4)
+                    .foregroundStyle(Theme.cream)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(Theme.ink)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                Text(station.name)
+                    .font(.ui(14, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Button(action: onClear) {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Theme.ink)
@@ -224,32 +358,78 @@ struct HomeScreen: View {
                         .background(Theme.ink.opacity(0.1))
                         .clipShape(Circle())
                 }
+            } else {
+                TextField(placeholder, text: query)
+                    .font(.ui(14))
+                    .foregroundStyle(Theme.ink)
+                    .focused($focusedField, equals: slot)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .onSubmit {
+                        // Return on an empty To field means "no destination".
+                        if slot == .to, query.wrappedValue.isEmpty {
+                            viewAllDepartures()
+                        }
+                    }
+                if !query.wrappedValue.isEmpty {
+                    Button {
+                        query.wrappedValue = ""
+                        searchResults = nil
+                        searchError = false
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                            .frame(width: 22, height: 22)
+                            .background(Theme.ink.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                }
             }
         }
-        .padding(14)
-        .background(searchFocused || !query.isEmpty ? Theme.searchField : Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(searchFocused || !query.isEmpty ? Theme.ink : .clear, lineWidth: 1)
-        )
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if station == nil { focusedField = slot }
+        }
+    }
+
+    private var viewAllDeparturesButton: some View {
+        Button(action: viewAllDepartures) {
+            HStack(spacing: 8) {
+                Text("View all departures")
+                    .font(.ui(14, weight: .semibold))
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(Theme.ink)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+            .background(accent)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Search Results
 
     private func searchResultsSection(_ results: [Station]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        // Don't offer the station already chosen for the other end.
+        let excludedCode = activeSlot == .to ? fromStation?.code : toStation?.code
+        let visible = results.filter { $0.code != excludedCode }
+        return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(results.count) result\(results.count == 1 ? "" : "s")")
+                Text("\(visible.count) result\(visible.count == 1 ? "" : "s")")
                     .font(.display(22))
                     .tracking(-0.2)
-                Text("for \"\(query)\"")
+                Text("for \"\(activeQuery)\"")
                     .font(.mono(11, weight: .medium))
                     .tracking(0.3)
                     .foregroundStyle(Theme.inkMute)
             }
 
-            if results.isEmpty && searchError {
+            if visible.isEmpty && searchError {
                 VStack(spacing: 4) {
                     Image(systemName: "wifi.slash")
                         .font(.system(size: 18))
@@ -265,7 +445,7 @@ struct HomeScreen: View {
                 .padding(.vertical, 28)
                 .background(Theme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-            } else if results.isEmpty {
+            } else if visible.isEmpty {
                 VStack(spacing: 4) {
                     Text("No stations found")
                         .font(.display(18))
@@ -278,7 +458,7 @@ struct HomeScreen: View {
                 .background(Theme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             } else {
-                stationList(results, style: .search)
+                stationList(visible, style: .search)
             }
         }
         .padding(.horizontal, 18)
@@ -585,6 +765,9 @@ struct HomeScreen: View {
                                     .foregroundStyle(Theme.ink)
                             }
                         }
+                        // Rows have no background fill, so without an explicit
+                        // shape only the drawn pixels are tappable.
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
 

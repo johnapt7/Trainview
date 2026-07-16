@@ -113,6 +113,7 @@ struct ServiceDetailsResponse: Codable {
     let expectedDeparture: String?
     let scheduledArrival: String?
     let expectedArrival: String?
+    let length: Int?
     let origin: StationLocation?
     let destination: StationLocation?
     let previousCallingPoints: [CallingPointResponse]
@@ -382,6 +383,21 @@ struct TrainAssociation: Decodable {
     let partnerRid: String?
     let isMain: Bool
     let cancelled: Bool
+}
+
+// MARK: - Route Geometry
+
+struct RouteGeometryResponse: Decodable {
+    let legs: [RouteGeometryLeg]
+}
+
+struct RouteGeometryLeg: Decodable {
+    let from: String
+    let to: String
+    /// "osm" when routed along real track, "straight" for a 2-point fallback.
+    let source: String
+    /// [lat, lng] pairs ordered from → to.
+    let coords: [[Double]]
 }
 
 // MARK: - API Error

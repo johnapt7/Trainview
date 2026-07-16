@@ -72,7 +72,7 @@ final class TrainNotificationManager {
             scheduleNotification(
                 id: "\(serviceId)-cancelled",
                 title: "Train Cancelled",
-                body: "\(trainDescription) has been cancelled. Open Live Rail for alternatives."
+                body: "\(trainDescription) has been cancelled. Open Trainview for alternatives."
             )
             return
         }

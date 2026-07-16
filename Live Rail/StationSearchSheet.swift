@@ -10,6 +10,7 @@ struct StationSearchSheet: View {
     @State private var isSearching = false
     @State private var searchTask: Task<Void, Never>?
     @State private var resultCache: [String: [StationResponse]] = [:]
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -52,6 +53,7 @@ struct StationSearchSheet: View {
                 .foregroundStyle(Theme.inkMute)
             TextField("Search station", text: $query)
                 .font(.ui(15))
+                .focused($searchFocused)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.words)
             if !query.isEmpty {
@@ -73,7 +75,15 @@ struct StationSearchSheet: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Theme.line, lineWidth: 1)
         )
+        // Tapping anywhere on the field focuses it, not just the text itself,
+        // and the sheet opens ready to type.
+        .contentShape(Rectangle())
+        .onTapGesture { searchFocused = true }
         .padding(.horizontal, 22)
+        .task {
+            try? await Task.sleep(for: .milliseconds(450))
+            searchFocused = true
+        }
         .onChange(of: query) { _, newValue in
             searchTask?.cancel()
             let trimmed = newValue.trimmingCharacters(in: .whitespaces)
@@ -145,6 +155,7 @@ struct StationSearchSheet: View {
                             dismiss()
                         } label: {
                             stationRow(station)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }

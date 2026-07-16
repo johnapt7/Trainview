@@ -18,18 +18,18 @@ enum TripShareText {
 
         switch status {
         case .cancelled:
-            return "My \(departTime) train from \(originName) to \(destName) has been cancelled. Sent from Live Rail."
+            return "My \(departTime) train from \(originName) to \(destName) has been cancelled. Sent from Trainview."
         case .delayed:
             if let arrivalTime {
                 let lateness = delayMinutes.flatMap { $0 > 0 ? "running \($0) min late" : nil } ?? "running late"
-                return "I'm on the \(route) — arriving \(arrivalTime), \(lateness). Sent from Live Rail."
+                return "I'm on the \(route) — arriving \(arrivalTime), \(lateness). Sent from Trainview."
             }
-            return "I'm on the \(route) — currently delayed, no arrival estimate yet. Sent from Live Rail."
+            return "I'm on the \(route) — currently delayed, no arrival estimate yet. Sent from Trainview."
         case .onTime:
             if let arrivalTime {
-                return "I'm on the \(route) — arriving \(arrivalTime), on time. Sent from Live Rail."
+                return "I'm on the \(route) — arriving \(arrivalTime), on time. Sent from Trainview."
             }
-            return "I'm on the \(route). Sent from Live Rail."
+            return "I'm on the \(route). Sent from Trainview."
         }
     }
 

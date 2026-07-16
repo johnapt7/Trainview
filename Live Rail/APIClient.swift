@@ -222,6 +222,13 @@ final class APIClient {
 
     // MARK: - Movements
 
+    func getRouteGeometry(crsCodes: [String]) async throws -> RouteGeometryResponse {
+        try await request(
+            "/route/geometry",
+            queryItems: [URLQueryItem(name: "crs", value: crsCodes.joined(separator: ","))]
+        )
+    }
+
     func getMovements(rid: String, uid: String? = nil) async throws -> MovementsResponse {
         var queryItems: [URLQueryItem] = []
         if let uid, !uid.isEmpty {

@@ -105,7 +105,7 @@ struct FAQSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Live Rail")
+            Text("Trainview")
                 .font(.display(28))
                 .tracking(-0.4)
                 .foregroundStyle(Theme.ink)
