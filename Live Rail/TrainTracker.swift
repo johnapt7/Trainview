@@ -152,6 +152,10 @@ final class TrainTracker {
             observePushToken(train: train)
         }
         notificationManager.configure(train: train, boardingStation: boarding)
+        // Re-establish authorization: the manager's cached flag starts false
+        // in every new process, which silently disabled all alerts after a
+        // relaunch until this call existed.
+        Task { await notificationManager.requestPermissionIfNeeded() }
 
         await poll()
         // The catch-up poll may have detected arrival and ended everything.
@@ -164,7 +168,12 @@ final class TrainTracker {
     /// Activity catch up without waiting out the poll loop's sleep.
     func pollNow() {
         guard isTracking else { return }
-        Task { await self.poll() }
+        Task {
+            // The user may have flipped notification permission in Settings
+            // while we were backgrounded — re-read it before evaluating.
+            await notificationManager.refreshAuthorization()
+            await self.poll()
+        }
     }
 
     /// The user's journey ends where they get off, not where the train
@@ -443,6 +452,10 @@ final class TrainTracker {
     private func startPolling() {
         pollingTask?.cancel()
         pollingTask = Task { [weak self] in
+            // First poll immediately — waiting out a full interval before the
+            // first fetch delays every notification, and can miss the
+            // departure-reminder window entirely for imminent trains.
+            await self?.poll()
             while !Task.isCancelled {
                 let delay = await MainActor.run { self?.nextPollDelay() } ?? .seconds(30)
                 try? await Task.sleep(for: delay)
@@ -566,9 +579,11 @@ final class TrainTracker {
         }
 
         if boardingHasDeparted {
-            if !didNotifyDeparted {
+            if !didNotifyDeparted,
+               notificationManager.notifyDeparted(from: boardingStation?.name ?? "the station") {
+                // Consume the one-shot only when the alert was actually
+                // scheduled — a not-yet-authorized attempt retries next poll.
                 didNotifyDeparted = true
-                notificationManager.notifyDeparted(from: boardingStation?.name ?? "the station")
             }
         } else if !details.isCancelled,
                   let bIdx = trackedStops.firstIndex(where: { $0.crs == boardingStation?.code }),
@@ -577,18 +592,19 @@ final class TrainTracker {
         }
 
         // Per-stop alert as the train passes each calling point. The final
-        // stop is excluded — notifyStopIsNext below owns that moment.
-        if nextStopIndex > lastNotifiedNextStop,
-           nextStopIndex < trackedStops.count - 1,
-           trackedStops.contains(where: { $0.hasDeparted }) {
-            notificationManager.notifyNextStop(
+        // stop is excluded — notifyStopIsNext below owns that moment. The
+        // marker only advances when the alert was actually scheduled (or
+        // needed no alert), so a blocked attempt retries next poll.
+        if nextStopIndex > lastNotifiedNextStop {
+            let alertable = nextStopIndex < trackedStops.count - 1
+                && trackedStops.contains(where: { $0.hasDeparted })
+            if !alertable || notificationManager.notifyNextStop(
                 trackedStops[nextStopIndex].station,
                 expectedTime: TrainTracker.clockTimeString(for: trackedStops[nextStopIndex]),
                 stopsToGo: trackedStops.count - 1 - nextStopIndex
-            )
-        }
-        if nextStopIndex > lastNotifiedNextStop {
-            lastNotifiedNextStop = nextStopIndex
+            ) {
+                lastNotifiedNextStop = nextStopIndex
+            }
         }
 
         // The stop the user gets off at is the last tracked stop (trimmed to
