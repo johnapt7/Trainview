@@ -15,6 +15,7 @@ struct JourneyScreen: View {
     @State private var stopTimes: [Date?] = []
     @State private var showTrackingSheet = false
     @State private var duration: String = ""
+    @State private var showPerformance = false
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var reliability: ReliabilityStats?
@@ -65,7 +66,6 @@ struct JourneyScreen: View {
                                 .padding(.horizontal, 18)
                                 .padding(.top, 14)
                         }
-                        factsRow
                         if let reason = train.cancelReason ?? train.delayReason {
                             reasonBanner(reason)
                         }
@@ -975,27 +975,6 @@ struct JourneyScreen: View {
         .padding(.top, 18)
     }
 
-    // MARK: - Facts
-
-    /// Carriage count from the richest source available: the departure
-    /// board's length, then the service details' length, then counting the
-    /// coaches in the live formation diagram.
-    private var carriageCount: Int? {
-        train.carriages
-            ?? details?.length
-            ?? (coaches.isEmpty ? nil : coaches.count)
-    }
-
-    private var factsRow: some View {
-        HStack(spacing: 8) {
-            FactTile(icon: "train.side.front.car", value: carriageCount.map { "\($0)" } ?? "—", label: "Carriages")
-            FactTile(icon: "clock", value: duration.isEmpty ? "—" : duration, label: "Journey")
-            FactTile(icon: "mappin.and.ellipse", value: personalStopCount < 1 ? "—" : "\(personalStopCount)", label: "Stops")
-        }
-        .padding(.horizontal, 18)
-        .padding(.top, 18)
-    }
-
     // MARK: - Reason Banner
 
     private func reasonBanner(_ reason: String) -> some View {
@@ -1109,35 +1088,63 @@ struct JourneyScreen: View {
 
     // MARK: - Performance
 
+    /// Collapsed to a one-line header (label + tinted percentage) by default;
+    /// tapping unfolds the counters. Saves a card's height on a busy screen.
     private var performanceCard: some View {
         Group {
             if let stats = reliability {
                 let onTimePct = Int(stats.onTimePercent)
                 let tone: String = onTimePct >= 80 ? "good" : onTimePct >= 60 ? "ok" : "bad"
+                let pctColor: Color = tone == "good" ? Theme.perfGood : tone == "bad" ? Theme.perfBad : Theme.ink
 
-                VStack(spacing: 10) {
-                    Text("ON-TIME PERFORMANCE")
-                        .font(.mono(9, weight: .semibold))
-                        .tracking(1.3)
-                        .foregroundStyle(Theme.inkMute)
+                VStack(spacing: 0) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showPerformance.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text("ON-TIME PERFORMANCE")
+                                .font(.mono(9, weight: .semibold))
+                                .tracking(1.3)
+                                .foregroundStyle(Theme.inkMute)
+                            Spacer()
+                            Text("\(onTimePct)%")
+                                .font(.ui(15, weight: .semibold))
+                                .foregroundStyle(pctColor)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Theme.inkMute)
+                                .rotationEffect(.degrees(showPerformance ? 180 : 0))
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 14)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
 
-                    Text("On time \(Text("\(onTimePct)% of services").font(.ui(17, weight: .semibold)).foregroundColor(tone == "good" ? Theme.perfGood : tone == "bad" ? Theme.perfBad : Theme.ink)) \(Text("over \(stats.period)").font(.mono(14, weight: .medium)).foregroundColor(Theme.inkSoft))")
-                        .font(.ui(17))
-                        .multilineTextAlignment(.center)
+                    if showPerformance {
+                        VStack(spacing: 10) {
+                            Text("On time \(Text("\(onTimePct)% of services").font(.ui(17, weight: .semibold)).foregroundColor(pctColor)) \(Text("over \(stats.period)").font(.mono(14, weight: .medium)).foregroundColor(Theme.inkSoft))")
+                                .font(.ui(17))
+                                .multilineTextAlignment(.center)
 
-                    // Equal thirds so the counters sit balanced across the
-                    // card instead of clustering at the leading edge.
-                    HStack(spacing: 0) {
-                        StatBadge(value: "\(stats.onTimeServices)", label: "On time", color: Theme.perfGood)
-                            .frame(maxWidth: .infinity)
-                        StatBadge(value: "\(stats.delayedServices)", label: "Delayed", color: Theme.delayedText)
-                            .frame(maxWidth: .infinity)
-                        StatBadge(value: "\(stats.cancelledServices)", label: "Cancelled", color: Theme.cancelledText)
-                            .frame(maxWidth: .infinity)
+                            // Equal thirds so the counters sit balanced across the
+                            // card instead of clustering at the leading edge.
+                            HStack(spacing: 0) {
+                                StatBadge(value: "\(stats.onTimeServices)", label: "On time", color: Theme.perfGood)
+                                    .frame(maxWidth: .infinity)
+                                StatBadge(value: "\(stats.delayedServices)", label: "Delayed", color: Theme.delayedText)
+                                    .frame(maxWidth: .infinity)
+                                StatBadge(value: "\(stats.cancelledServices)", label: "Cancelled", color: Theme.cancelledText)
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.bottom, 16)
+                        .transition(.opacity)
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 16)
                 .frame(maxWidth: .infinity)
                 .background(Theme.card)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -1268,33 +1275,6 @@ private struct CoachCell: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(coach.isFirstClass ? Theme.ink.opacity(0.4) : Theme.line, lineWidth: 1)
         )
-    }
-}
-
-private struct FactTile: View {
-    let icon: String
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 15))
-                .foregroundStyle(Theme.ink)
-            Text(value)
-                .font(.display(15))
-                .lineLimit(1)
-            Text(label.uppercased())
-                .font(.mono(9))
-                .tracking(0.7)
-                .foregroundStyle(Theme.inkMute)
-        }
-        .padding(.horizontal, 8)
-        .padding(.top, 12)
-        .padding(.bottom, 11)
-        .frame(maxWidth: .infinity)
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 }
 
