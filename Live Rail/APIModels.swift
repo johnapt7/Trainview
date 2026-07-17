@@ -262,9 +262,6 @@ struct StationDisruptionsResponse: Codable {
     let crs: String
     let stationName: String
     let disruptions: [StationDisruption]
-    /// NRCC station announcements — the same messages the board screen
-    /// shows for this station.
-    let announcements: [String]?
 }
 
 struct StationDisruption: Codable, Identifiable {
