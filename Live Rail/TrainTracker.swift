@@ -44,6 +44,12 @@ final class TrainTracker {
     private var registeredPushToken: String?
     private let notificationManager = TrainNotificationManager()
 
+    // One-shot notification state for the tracked journey. Baselined on the
+    // first poll so a resumed session doesn't replay old alerts.
+    private var notificationBaselineSet = false
+    private var didNotifyDeparted = false
+    private var lastNotifiedNextStop = 1
+
     private static let snapshotKey = "trackingSnapshot"
 
     func startTracking(train: Train, stops: [Stop], boardingStation: Station, alightingCRS: String? = nil) {
@@ -54,6 +60,9 @@ final class TrainTracker {
         stopTimes = TrainTracker.parseStopTimes(trackedStops)
         lastPolled = Date()
         isTracking = true
+        notificationBaselineSet = false
+        didNotifyDeparted = false
+        lastNotifiedNextStop = 1
         saveSnapshot(train: train, boardingStation: boardingStation)
         recalculatePosition()
         startLiveActivity(train: train, stops: trackedStops)
@@ -82,6 +91,9 @@ final class TrainTracker {
         movements = []
         lastPolled = nil
         notificationManager.reset()
+        notificationBaselineSet = false
+        didNotifyDeparted = false
+        lastNotifiedNextStop = 1
         endLiveActivity()
         UserDefaults.standard.removeObject(forKey: Self.snapshotKey)
     }
@@ -544,6 +556,40 @@ final class TrainTracker {
 
         recalculatePosition()
         updateLiveActivity()
+
+        // Baseline on the first poll of a session: a resumed journey must not
+        // replay departure/stop alerts for legs already travelled.
+        if !notificationBaselineSet {
+            notificationBaselineSet = true
+            didNotifyDeparted = boardingHasDeparted
+            lastNotifiedNextStop = nextStopIndex
+        }
+
+        if boardingHasDeparted {
+            if !didNotifyDeparted {
+                didNotifyDeparted = true
+                notificationManager.notifyDeparted(from: boardingStation?.name ?? "the station")
+            }
+        } else if !details.isCancelled,
+                  let bIdx = trackedStops.firstIndex(where: { $0.crs == boardingStation?.code }),
+                  bIdx < stopTimes.count, let departure = stopTimes[bIdx] {
+            notificationManager.scheduleDepartureReminder(departure: departure, platform: platformToReport)
+        }
+
+        // Per-stop alert as the train passes each calling point. The final
+        // stop is excluded — notifyStopIsNext below owns that moment.
+        if nextStopIndex > lastNotifiedNextStop,
+           nextStopIndex < trackedStops.count - 1,
+           trackedStops.contains(where: { $0.hasDeparted }) {
+            notificationManager.notifyNextStop(
+                trackedStops[nextStopIndex].station,
+                expectedTime: TrainTracker.clockTimeString(for: trackedStops[nextStopIndex]),
+                stopsToGo: trackedStops.count - 1 - nextStopIndex
+            )
+        }
+        if nextStopIndex > lastNotifiedNextStop {
+            lastNotifiedNextStop = nextStopIndex
+        }
 
         // The stop the user gets off at is the last tracked stop (trimmed to
         // the alighting station above). Alert once, as soon as it becomes the

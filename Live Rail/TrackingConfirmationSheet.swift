@@ -78,8 +78,20 @@ struct TrackingConfirmationSheet: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 featureRow(icon: "location.fill", text: "See which stop the train is at in real time")
-                featureRow(icon: "bell.fill", text: "Alerts for platform changes, delays — and when your stop is next")
                 featureRow(icon: "rectangle.stack.fill", text: "Track from the lock screen with Live Activity")
+
+                Text("NOTIFICATIONS YOU'LL GET")
+                    .font(.mono(10, weight: .semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.inkMute)
+                    .padding(.top, 6)
+
+                notificationRow("clock.badge.exclamationmark", "Departure reminder — 5 minutes before it leaves, with the platform")
+                notificationRow("tram.fill", "When your train departs \(boardingStation.name)")
+                notificationRow("arrow.left.arrow.right", "Platform changes and confirmations")
+                notificationRow("exclamationmark.triangle.fill", "Delays and cancellation")
+                notificationRow("mappin.and.ellipse", "Each stop along the way as the train calls")
+                notificationRow("figure.walk", "When your stop is next")
             }
             .padding(16)
             .background(Theme.card)
@@ -235,6 +247,22 @@ struct TrackingConfirmationSheet: View {
             Text(text)
                 .font(.ui(12))
                 .foregroundStyle(Theme.inkSoft)
+        }
+    }
+
+    /// Compact row for the notifications list — quieter than featureRow so
+    /// six of them don't overwhelm the sheet.
+    private func notificationRow(_ icon: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+                .foregroundStyle(accent)
+                .frame(width: 18, alignment: .center)
+                .padding(.top, 1)
+            Text(text)
+                .font(.ui(12))
+                .foregroundStyle(Theme.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

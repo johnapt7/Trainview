@@ -14,12 +14,14 @@ final class TrainNotificationManager {
     private var serviceId = ""
     private var isAuthorized = false
     private var didNotifyStopIsNext = false
+    private var scheduledReminderKey: String?
 
     func configure(train: Train, boardingStation: Station) {
         serviceId = train.serviceId
         trainDescription = "Your \(train.time) to \(train.destination)"
         lastSnapshot = nil
         didNotifyStopIsNext = false
+        scheduledReminderKey = nil
     }
 
     /// Fired once per tracked journey, when the user's alighting stop becomes
@@ -31,6 +33,71 @@ final class TrainNotificationManager {
             id: "\(serviceId)-stop-next",
             title: "Your stop is next",
             body: "Get ready to get off at \(stationName)"
+        )
+    }
+
+    /// Pre-departure reminder, pended with the system so it fires even if the
+    /// app is suspended by then. Re-scheduled whenever the expected departure
+    /// or platform changes; the key guard avoids churning identical requests.
+    func scheduleDepartureReminder(departure: Date, platform: String?) {
+        guard isAuthorized else { return }
+        let fireInterval = departure.addingTimeInterval(-5 * 60).timeIntervalSinceNow
+        guard fireInterval > 10 else { return }
+
+        let key = "\(Int(departure.timeIntervalSince1970))-\(platform ?? "?")"
+        guard key != scheduledReminderKey else { return }
+        scheduledReminderKey = key
+
+        var body = "\(trainDescription) leaves in 5 minutes"
+        if let platform, !platform.isEmpty {
+            body += " from Platform \(platform)"
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Departing soon"
+        content.body = body
+        content.sound = .default
+        content.threadIdentifier = serviceId
+
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ["\(serviceId)-departing-soon"])
+        center.add(UNNotificationRequest(
+            identifier: "\(serviceId)-departing-soon",
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: fireInterval, repeats: false)
+        ))
+    }
+
+    /// Fired once when the boarding station's departure is confirmed. Also
+    /// clears any still-pending "departing soon" reminder — it's now stale.
+    func notifyDeparted(from stationName: String) {
+        guard isAuthorized else { return }
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: ["\(serviceId)-departing-soon"])
+        scheduleNotification(
+            id: "\(serviceId)-departed",
+            title: "On the move",
+            body: "\(trainDescription) has departed \(stationName)"
+        )
+    }
+
+    /// Fired as the journey advances past each calling point. The alighting
+    /// stop is excluded — it gets the dedicated "Your stop is next" alert.
+    func notifyNextStop(_ stationName: String, expectedTime: String?, stopsToGo: Int) {
+        guard isAuthorized else { return }
+        var body = "Next stop \(stationName)"
+        if let expectedTime, isClockTime(expectedTime) {
+            body += " · \(expectedTime)"
+        }
+        if stopsToGo == 1 {
+            body += " — 1 stop before yours"
+        } else if stopsToGo > 1 {
+            body += " — \(stopsToGo) stops before yours"
+        }
+        scheduleNotification(
+            id: "\(serviceId)-next-\(stationName)",
+            title: "Next stop",
+            body: body
         )
     }
 
@@ -109,12 +176,15 @@ final class TrainNotificationManager {
     func reset() {
         lastSnapshot = nil
         didNotifyStopIsNext = false
+        scheduledReminderKey = nil
         UNUserNotificationCenter.current().removePendingNotificationRequests(
             withIdentifiers: [
                 "\(serviceId)-cancelled",
                 "\(serviceId)-platform",
                 "\(serviceId)-delay",
-                "\(serviceId)-stop-next"
+                "\(serviceId)-stop-next",
+                "\(serviceId)-departing-soon",
+                "\(serviceId)-departed"
             ]
         )
     }
