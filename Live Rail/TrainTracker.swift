@@ -44,6 +44,10 @@ final class TrainTracker {
     private var registeredPushToken: String?
     private let notificationManager = TrainNotificationManager()
 
+    // Confirmed platform from the latest poll; nil until the boards announce
+    // one. Gates the "boarding" state — see isBoarding.
+    private var announcedPlatform: String?
+
     // One-shot notification state for the tracked journey. Baselined on the
     // first poll so a resumed session doesn't replay old alerts.
     private var notificationBaselineSet = false
@@ -91,6 +95,7 @@ final class TrainTracker {
         movements = []
         lastPolled = nil
         notificationManager.reset()
+        announcedPlatform = nil
         notificationBaselineSet = false
         didNotifyDeparted = false
         lastNotifiedNextStop = 1
@@ -215,16 +220,22 @@ final class TrainTracker {
         stopTimes.last ?? nil
     }
 
-    /// True once the journey hasn't started AND we're close enough to the
-    /// boarding station's departure that "boarding" is meaningful (within
-    /// 15 minutes, or the departure time is unknown/delayed — passengers
-    /// wait at the platform for a delayed start). Before that window the
-    /// train likely isn't even at the platform yet.
+    /// True once the journey hasn't started, the platform has actually been
+    /// announced, AND we're close enough to the boarding station's departure
+    /// (within 15 minutes, or the time is unknown/delayed). Without an
+    /// announced platform nobody can be boarding — at a terminus the doors
+    /// effectively open when the board shows the platform, not before.
     var isBoarding: Bool {
+        guard hasAnnouncedPlatform else { return false }
         guard !trackedStops.contains(where: { $0.hasDeparted }) else { return false }
         let idx = trackedStops.firstIndex { $0.crs == boardingStation?.code } ?? 0
         guard idx < stopTimes.count, let dep = stopTimes[idx] else { return true }
         return dep.timeIntervalSinceNow <= 15 * 60
+    }
+
+    private var hasAnnouncedPlatform: Bool {
+        guard let announcedPlatform else { return false }
+        return !announcedPlatform.isEmpty && announcedPlatform != "—"
     }
 
     // MARK: - Position Inference
@@ -556,6 +567,9 @@ final class TrainTracker {
 
         let boardingHasDeparted = updatedStops.first { $0.crs == boardingStation?.code }?.hasDeparted ?? false
         let confirmedPlatform = details.platform
+        // Only the announced (confirmed) platform counts for boarding state —
+        // a predicted platform means the boards haven't shown one yet.
+        announcedPlatform = confirmedPlatform
         let isPredicted = confirmedPlatform == nil && details.predictedPlatform != nil
         let platformToReport = confirmedPlatform ?? details.predictedPlatform?.platform
         notificationManager.evaluateChanges(
