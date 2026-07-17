@@ -2,22 +2,25 @@ import SwiftUI
 
 enum AppScreen {
     case welcome
-    case home
-    case stations
-    case disruptions
+    case tabs
     case departures
     case journey
+    case networkMap
+}
+
+enum AppTab {
+    case home
+    case favourites
+    case disruptions
 }
 
 struct ContentView: View {
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @State private var screen: AppScreen = .welcome
+    @State private var tab: AppTab = .home
     @State private var activeTrain: Train?
     @State private var activeStation: Station = Station(code: "KGX", name: "King's Cross")
     @State private var pendingJourneyFilter: Station?
-    /// Where the departure board's back button returns to — home normally,
-    /// My Stations when the board was opened from there.
-    @State private var boardReturnScreen: AppScreen = .home
     @State private var tracker = TrainTracker()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -30,78 +33,11 @@ struct ContentView: View {
                 WelcomeScreen(accent: accent) {
                     hasSeenWelcome = true
                     withAnimation(.easeInOut(duration: 0.25)) {
-                        screen = .home
+                        screen = .tabs
                     }
                 }
-            case .home:
-                HomeScreen(
-                    accent: accent,
-                    tracker: tracker,
-                    onPickStation: { station in
-                        activeStation = station
-                        pendingJourneyFilter = nil
-                        boardReturnScreen = .home
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .departures
-                        }
-                    },
-                    onPickJourney: { journey in
-                        activeStation = journey.origin
-                        pendingJourneyFilter = journey.destination
-                        boardReturnScreen = .home
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .departures
-                        }
-                    },
-                    onOpenTrackedTrain: {
-                        // Mirrors the Live Activity deep link: land on the
-                        // tracked journey with its original boarding station.
-                        guard let train = tracker.trackedTrain else { return }
-                        activeTrain = train
-                        if let boarding = tracker.boardingStation {
-                            activeStation = boarding
-                        }
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .journey
-                        }
-                    },
-                    onOpenMyStations: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .stations
-                        }
-                    },
-                    onOpenDisruptions: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .disruptions
-                        }
-                    }
-                )
-            case .disruptions:
-                DisruptionsScreen(
-                    accent: accent,
-                    onBack: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .home
-                        }
-                    }
-                )
-            case .stations:
-                MyStationsScreen(
-                    accent: accent,
-                    onPickStation: { station in
-                        activeStation = station
-                        pendingJourneyFilter = nil
-                        boardReturnScreen = .stations
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .departures
-                        }
-                    },
-                    onBack: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .home
-                        }
-                    }
-                )
+            case .tabs:
+                mainTabs
             case .departures:
                 BoardScreen(
                     station: activeStation,
@@ -114,8 +50,18 @@ struct ContentView: View {
                         }
                     },
                     onBack: {
+                        // Returns to whichever tab the board was opened from —
+                        // tab selection persists underneath the board.
                         withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = boardReturnScreen
+                            screen = .tabs
+                        }
+                    }
+                )
+            case .networkMap:
+                NetworkMapScreen(
+                    onBack: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            screen = .tabs
                         }
                     }
                 )
@@ -145,16 +91,23 @@ struct ContentView: View {
         }
         .onAppear {
             if hasSeenWelcome {
-                screen = .home
+                screen = .tabs
             }
             // Pick tracking back up after a relaunch so a live journey (and
             // its Live Activity) survives force-quits and Xcode reruns.
             Task { _ = await tracker.resumeIfNeeded() }
             #if DEBUG
-            // Testing hook (debug builds only):
-            // `simctl launch <udid> <bundle> -openBoard <CRS>` jumps straight
-            // to that station's departure board.
+            // Testing hooks (debug builds only):
+            // `simctl launch <udid> <bundle> -openTab disruptions` lands on
+            // that tab; `-openBoard <CRS>` jumps to a departure board.
             let args = ProcessInfo.processInfo.arguments
+            if let idx = args.firstIndex(of: "-openTab"), idx + 1 < args.count {
+                switch args[idx + 1] {
+                case "favourites": tab = .favourites
+                case "disruptions": tab = .disruptions
+                default: break
+                }
+            }
             if let idx = args.firstIndex(of: "-openBoard"), idx + 1 < args.count {
                 let crs = args[idx + 1]
                 Task {
@@ -189,6 +142,64 @@ struct ContentView: View {
             if phase == .active {
                 tracker.pollNow()
             }
+        }
+    }
+
+    /// Root tab bar (iOS 26 Liquid Glass). The departure board and journey
+    /// screens replace the whole view rather than pushing within a tab, so
+    /// the bar only shows at the app's top level.
+    private var mainTabs: some View {
+        TabView(selection: $tab) {
+            Tab("Home", systemImage: "house.fill", value: AppTab.home) {
+                HomeScreen(
+                    accent: accent,
+                    tracker: tracker,
+                    onPickStation: openBoard,
+                    onPickJourney: { journey in
+                        activeStation = journey.origin
+                        pendingJourneyFilter = journey.destination
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            screen = .departures
+                        }
+                    },
+                    onOpenTrackedTrain: {
+                        // Mirrors the Live Activity deep link: land on the
+                        // tracked journey with its original boarding station.
+                        guard let train = tracker.trackedTrain else { return }
+                        activeTrain = train
+                        if let boarding = tracker.boardingStation {
+                            activeStation = boarding
+                        }
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            screen = .journey
+                        }
+                    },
+                    onOpenNetworkMap: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            screen = .networkMap
+                        }
+                    }
+                )
+            }
+            Tab("Favourites", systemImage: "star.fill", value: AppTab.favourites) {
+                FavouritesScreen(
+                    accent: accent,
+                    onPickStation: openBoard
+                )
+            }
+            Tab("Disruptions", systemImage: "exclamationmark.triangle.fill", value: AppTab.disruptions) {
+                DisruptionsScreen(accent: accent)
+            }
+        }
+        .tint(Theme.ink)
+        .tabBarMinimizeBehavior(.onScrollDown)
+    }
+
+    private func openBoard(_ station: Station) {
+        activeStation = station
+        pendingJourneyFilter = nil
+        withAnimation(.easeInOut(duration: 0.25)) {
+            screen = .departures
         }
     }
 }

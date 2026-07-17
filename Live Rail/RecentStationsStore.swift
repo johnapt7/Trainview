@@ -2,12 +2,15 @@ import Foundation
 
 @Observable
 final class RecentStationsStore {
+    /// One instance app-wide — see FavouriteStationsStore.shared.
+    static let shared = RecentStationsStore()
+
     private static let key = "recentStations"
     private static let maxRecents = 5
 
     var stations: [Station] = []
 
-    init() {
+    private init() {
         load()
     }
 

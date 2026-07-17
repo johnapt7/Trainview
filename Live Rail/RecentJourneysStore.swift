@@ -12,12 +12,15 @@ struct RecentJourney: Identifiable, Codable, Equatable {
 
 @Observable
 final class RecentJourneysStore {
+    /// One instance app-wide — see FavouriteStationsStore.shared.
+    static let shared = RecentJourneysStore()
+
     private static let key = "recentJourneys"
     private static let maxJourneys = 4
 
     var journeys: [RecentJourney] = []
 
-    init() {
+    private init() {
         load()
     }
 

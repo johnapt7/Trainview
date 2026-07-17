@@ -5,13 +5,11 @@ import SwiftUI
 /// expandable detail. Replaces the old NetworkStatusSheet.
 struct DisruptionsScreen: View {
     let accent: Color
-    let onBack: () -> Void
 
     @State private var indicators: [TOCIndicator] = []
     @State private var indicatorsLoaded = false
     @State private var loadError = false
-    @State private var expandedTOC: String?
-    @State private var favouriteStore = FavouriteStationsStore()
+    @State private var favouriteStore = FavouriteStationsStore.shared
     @State private var stationAlerts: [StationDisruptionsResponse] = []
     @State private var stationsChecked = false
 
@@ -38,9 +36,9 @@ struct DisruptionsScreen: View {
                             favouriteAlertsSection
                         }
                         if !disrupted.isEmpty {
-                            operatorSection("Disruptions", tocs: disrupted, expandable: true)
+                            operatorSection("Disruptions", tocs: disrupted, disrupted: true)
                         }
-                        operatorSection("Good service", tocs: healthy, expandable: false)
+                        operatorSection("Good service", tocs: healthy, disrupted: false)
                     }
                     Color.clear.frame(height: 32)
                 }
@@ -54,20 +52,15 @@ struct DisruptionsScreen: View {
     // MARK: - Chrome
 
     private var topBar: some View {
-        HStack {
-            IconButton(systemName: "chevron.left", size: 14, action: onBack)
-            Spacer()
-            Text("DISRUPTIONS")
-                .font(.mono(11, weight: .semibold))
-                .tracking(2)
-                .foregroundStyle(Theme.ink)
-            Spacer()
-            Color.clear.frame(width: 38, height: 38)
-        }
-        .padding(.horizontal, 18)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .background(Theme.cream)
+        Text("DISRUPTIONS")
+            .font(.mono(11, weight: .semibold))
+            .tracking(2)
+            .foregroundStyle(Theme.ink)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .background(Theme.cream)
     }
 
     private var summaryHeader: some View {
@@ -172,9 +165,10 @@ struct DisruptionsScreen: View {
                     .frame(width: 32, height: 26)
                     .background(Theme.ink)
                     .clipShape(RoundedRectangle(cornerRadius: 5))
-                Text(alert.stationName)
+                Text(stationDisplayName(alert))
                     .font(.ui(14, weight: .semibold))
                     .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
                 Spacer()
                 Text("\(alert.disruptions.count) alert\(alert.disruptions.count == 1 ? "" : "s")")
                     .font(.mono(10, weight: .semibold))
@@ -183,26 +177,51 @@ struct DisruptionsScreen: View {
             }
             ForEach(alert.disruptions.prefix(3)) { disruption in
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
+                    HStack(alignment: .top, spacing: 6) {
                         Circle()
                             .fill(severityColor(disruption.severity))
                             .frame(width: 6, height: 6)
-                        Text(disruption.title)
+                            .padding(.top, 5)
+                        Text(disruption.title.decodingHTMLEntities())
                             .font(.ui(12, weight: .semibold))
                             .foregroundStyle(Theme.ink)
-                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text(disruption.description)
-                        .font(.ui(11))
-                        .foregroundStyle(Theme.inkSoft)
-                        .lineLimit(3)
-                        .padding(.leading, 12)
+                    // The feed's title usually embeds the description
+                    // ("Operator: message") — only repeat it when it adds
+                    // something the title doesn't already say.
+                    if !disruption.description.isEmpty,
+                       !disruption.title.contains(disruption.description) {
+                        Text(disruption.description.decodingHTMLEntities())
+                            .font(.ui(11))
+                            .foregroundStyle(Theme.inkSoft)
+                            .lineLimit(4)
+                            .padding(.leading, 12)
+                    }
+                    if let url = disruptionLink(disruption) {
+                        travelNewsLink(url, label: disruption.customerAdvice)
+                            .padding(.leading, 12)
+                            .padding(.top, 1)
+                    }
                 }
             }
         }
         .padding(14)
         .background(Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// The backend echoes the CRS code back as `stationName`, so resolve the
+    /// full name from the favourite it came from.
+    private func stationDisplayName(_ alert: StationDisruptionsResponse) -> String {
+        favouriteStore.stations.first { $0.code == alert.crs }?.name ?? alert.stationName
+    }
+
+    private func disruptionLink(_ disruption: StationDisruption) -> URL? {
+        guard let raw = disruption.detailURL, !raw.isEmpty,
+              let url = URL(string: raw),
+              url.scheme == "https" || url.scheme == "http" else { return nil }
+        return url
     }
 
     private func severityColor(_ severity: String) -> Color {
@@ -218,7 +237,7 @@ struct DisruptionsScreen: View {
 
     // MARK: - Operators
 
-    private func operatorSection(_ title: String, tocs: [TOCIndicator], expandable: Bool) -> some View {
+    private func operatorSection(_ title: String, tocs: [TOCIndicator], disrupted: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
                 .font(.mono(10, weight: .semibold))
@@ -228,7 +247,7 @@ struct DisruptionsScreen: View {
 
             VStack(spacing: 0) {
                 ForEach(Array(tocs.enumerated()), id: \.element.tocCode) { index, toc in
-                    operatorRow(toc, expandable: expandable)
+                    operatorRow(toc, disrupted: disrupted)
                         .overlay(alignment: .bottom) {
                             if index < tocs.count - 1 {
                                 Divider().overlay(Theme.line)
@@ -251,71 +270,69 @@ struct DisruptionsScreen: View {
         return toc.statusDescription.isEmpty ? "Disruption" : toc.statusDescription
     }
 
+    /// Everything worth knowing sits directly in the row — no disclosure.
+    /// Disrupted rows show the full status message plus a link to the
+    /// operator's live travel news page when the backend provides one.
     @ViewBuilder
-    private func operatorRow(_ toc: TOCIndicator, expandable: Bool) -> some View {
+    private func operatorRow(_ toc: TOCIndicator, disrupted: Bool) -> some View {
         let brand = OperatorBrand.brand(for: toc.tocCode)
-        let isExpanded = expandedTOC == toc.tocCode
         let statusLine = displayStatus(toc)
-        let hasDetail = expandable && (toc.additionalInfo?.isEmpty == false
-            || (!toc.statusDescription.isEmpty && toc.statusDescription != statusLine))
 
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                guard hasDetail else { return }
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    expandedTOC = isExpanded ? nil : toc.tocCode
+        HStack(alignment: .top, spacing: 10) {
+            Text(toc.tocCode)
+                .font(.mono(9, weight: .bold))
+                .tracking(0.5)
+                .foregroundStyle(brand.fg)
+                .frame(width: 32, height: 26)
+                .background(brand.bg)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(toc.tocName)
+                    .font(.ui(13, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                Text(statusLine.decodingHTMLEntities())
+                    .font(.ui(11))
+                    .foregroundStyle(disrupted ? Theme.delayedText : Theme.onTimeSub)
+                    .lineLimit(disrupted ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: true)
+                if disrupted, !toc.statusDescription.isEmpty, toc.statusDescription != statusLine {
+                    Text(toc.statusDescription.decodingHTMLEntities())
+                        .font(.ui(11))
+                        .foregroundStyle(Theme.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            } label: {
-                HStack(spacing: 10) {
-                    Text(toc.tocCode)
-                        .font(.mono(9, weight: .bold))
-                        .tracking(0.5)
-                        .foregroundStyle(brand.fg)
-                        .frame(width: 32, height: 26)
-                        .background(brand.bg)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(toc.tocName)
-                            .font(.ui(13, weight: .semibold))
-                            .foregroundStyle(Theme.ink)
-                            .lineLimit(1)
-                        Text(statusLine)
-                            .font(.ui(11))
-                            .foregroundStyle(toc.status == "Good service" ? Theme.onTimeSub : Theme.delayedText)
-                            .lineLimit(1)
-                    }
-                    Spacer()
-                    if hasDetail {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Theme.inkMute)
-                            .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                    }
+                if disrupted, let url = detailLink(toc) {
+                    travelNewsLink(url, label: toc.additionalInfo)
+                        .padding(.top, 2)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+    }
 
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    if !toc.statusDescription.isEmpty && toc.statusDescription != statusLine {
-                        Text(toc.statusDescription)
-                            .font(.ui(12))
-                            .foregroundStyle(Theme.inkSoft)
-                    }
-                    if let info = toc.additionalInfo, !info.isEmpty {
-                        Text(info)
-                            .font(.ui(11))
-                            .foregroundStyle(Theme.inkMute)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.bottom, 12)
-                .transition(.opacity)
+    /// A valid, tappable detail URL — nil hides the link entirely, so the
+    /// row degrades gracefully while the backend doesn't send one.
+    private func detailLink(_ toc: TOCIndicator) -> URL? {
+        guard let raw = toc.detailURL, !raw.isEmpty,
+              let url = URL(string: raw),
+              url.scheme == "https" || url.scheme == "http" else { return nil }
+        return url
+    }
+
+    private func travelNewsLink(_ url: URL, label: String?) -> some View {
+        let text = (label?.isEmpty == false) ? label! : "Latest travel news"
+        return Link(destination: url) {
+            HStack(spacing: 4) {
+                Text(text.decodingHTMLEntities())
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 9, weight: .bold))
             }
+            .font(.ui(11, weight: .semibold))
+            .foregroundStyle(Theme.ink)
+            .underline()
         }
     }
 

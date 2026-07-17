@@ -251,6 +251,9 @@ struct TOCIndicator: Codable, Identifiable {
     let status: String
     let statusDescription: String
     let additionalInfo: String?
+    /// Link to the operator's live travel news page. Optional so the app
+    /// keeps working against backends that don't send it yet.
+    let detailURL: String?
 }
 
 // MARK: - Disruptions (Station-level)
@@ -271,6 +274,8 @@ struct StationDisruption: Codable, Identifiable {
     let affectedOperators: [String]
     let validFrom: String
     let customerAdvice: String?
+    /// See TOCIndicator.detailURL.
+    let detailURL: String?
 }
 
 // MARK: - Movements (TRUST)
@@ -409,6 +414,35 @@ struct LiveActivityRegistration: Encodable {
     let uid: String?
     let boardingCrs: String
     let alightingCrs: String?
+}
+
+// MARK: - Active Trains Snapshot
+
+struct ActiveTrainsResponse: Codable {
+    let count: Int
+    let trains: [ActiveTrain]
+}
+
+/// One entry per active train from GET /api/movements. Location is the
+/// newest station-resolvable TRUST event; lateness and age reflect the
+/// newest event of any kind.
+struct ActiveTrain: Codable {
+    let rid: String
+    let uid: String?
+    let headcode: String
+    let toc: String
+    let eventType: String
+    let tiploc: String
+    let crs: String
+    let lat: Double
+    let lon: Double
+    let actualTimestamp: String
+    let ageSeconds: Int
+    let variationSeconds: Int
+    let variationStatus: String
+
+    /// Stable identity for dot tracking — RID when known, else CIF UID.
+    var key: String { rid.isEmpty ? (uid ?? "") : rid }
 }
 
 // MARK: - API Error

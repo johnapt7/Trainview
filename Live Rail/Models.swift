@@ -166,7 +166,15 @@ struct Train: Identifiable {
             self.platform = confirmed
             self.isPredictedPlatform = false
         } else if let predicted = service.predictedPlatform,
+                  Train.isAuthoritativePlatformSource(predicted.source) {
+            // Real-time and recorded-fact sources are true regardless of
+            // whether the train has left — LDBWS drops platforms for
+            // departed services, so this is what fills past boards.
+            self.platform = predicted.platform
+            self.isPredictedPlatform = false
+        } else if let predicted = service.predictedPlatform,
                   !Train.hasDeparted(scheduled: service.scheduledTime, expected: service.expectedTime) {
+            // Learned guesses stay hedged, and never speculate about the past.
             self.platform = predicted.platform
             self.isPredictedPlatform = true
         } else {
@@ -196,6 +204,17 @@ struct Train: Identifiable {
         default:
             self.status = .onTime
             self.statusNote = service.expectedTime
+        }
+    }
+
+    /// Sources that state where the train is or was — as opposed to the
+    /// learned tiers (pattern/historical), which are guesses.
+    private static func isAuthoritativePlatformSource(_ source: String) -> Bool {
+        switch source {
+        case "observed", "darwin_confirmed", "darwin", "td", "trust":
+            return true
+        default:
+            return false
         }
     }
 

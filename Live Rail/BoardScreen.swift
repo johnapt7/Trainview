@@ -36,8 +36,8 @@ struct BoardScreen: View {
     @State private var showFAQ = false
     @State private var filterDestination: Station?
     @State private var timeOffset: Int = 0
-    @State private var favouriteStore = FavouriteStationsStore()
-    @State private var journeysStore = RecentJourneysStore()
+    @State private var favouriteStore = FavouriteStationsStore.shared
+    @State private var journeysStore = RecentJourneysStore.shared
     @State private var stationDisruptions: [StationDisruption] = []
     @State private var disruptionsExpanded = false
     @State private var liveFeed: StationLiveFeed?
@@ -274,17 +274,24 @@ struct BoardScreen: View {
             callingPoints = seeded
         }
         let currentMode = mode
-        for train in services {
-            let serviceId = train.serviceId
-            if callingPoints[serviceId] != nil { continue }
+        // With 40-row boards a per-service fan-out would burst 40 requests at
+        // once; a handful of workers drain the list in board order instead,
+        // so the rows the user sees first fill in first.
+        let missing = services.map(\.serviceId).filter { callingPoints[$0] == nil }
+        guard !missing.isEmpty else { return }
+        let queue = MissingServiceQueue(ids: missing)
+        for _ in 0..<min(5, missing.count) {
             let task = Task {
-                guard let details = try? await APIClient.shared.getServiceDetails(serviceId: serviceId) else { return }
-                guard !Task.isCancelled else { return }
-                let points = currentMode == .departures
-                    ? details.subsequentCallingPoints
-                    : details.previousCallingPoints
-                withAnimation(.easeIn(duration: 0.25)) {
-                    callingPoints[serviceId] = points
+                while let serviceId = await queue.next() {
+                    guard !Task.isCancelled else { return }
+                    guard let details = try? await APIClient.shared.getServiceDetails(serviceId: serviceId) else { continue }
+                    guard !Task.isCancelled else { return }
+                    let points = currentMode == .departures
+                        ? details.subsequentCallingPoints
+                        : details.previousCallingPoints
+                    withAnimation(.easeIn(duration: 0.25)) {
+                        callingPoints[serviceId] = points
+                    }
                 }
             }
             callingPointsTasks.append(task)
@@ -759,6 +766,52 @@ struct BoardScreen: View {
 
     // MARK: - Train List
 
+    /// One board hour and the trains scheduled in it, in board order.
+    private struct HourGroup: Identifiable {
+        let id: String
+        let label: String
+        let startIndex: Int
+        var trains: [Train]
+    }
+
+    /// Consecutive runs of the same scheduled hour. Walking the sorted list
+    /// (rather than bucketing by hour value) keeps midnight-crossing boards
+    /// in order: 23:00 and the following 00:00 stay separate groups.
+    private var hourGroups: [HourGroup] {
+        var groups: [HourGroup] = []
+        var index = 0
+        for train in filtered {
+            let label = train.time.split(separator: ":").first.map { "\($0):00" } ?? "—"
+            if var last = groups.last, last.label == label {
+                last.trains.append(train)
+                groups[groups.count - 1] = last
+            } else {
+                groups.append(HourGroup(id: "\(label)-\(groups.count)", label: label, startIndex: index, trains: [train]))
+            }
+            index += 1
+        }
+        return groups
+    }
+
+    private func hourHeader(_ group: HourGroup) -> some View {
+        HStack(spacing: 10) {
+            Text(group.label)
+                .font(.mono(11, weight: .semibold))
+                .tracking(1.5)
+                .foregroundStyle(Theme.inkSoft)
+            Rectangle()
+                .fill(Theme.line)
+                .frame(height: 1)
+            Text("\(group.trains.count) train\(group.trains.count == 1 ? "" : "s")")
+                .font(.mono(10, weight: .medium))
+                .tracking(0.4)
+                .foregroundStyle(Theme.inkMute)
+        }
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity)
+        .background(Theme.cream)
+    }
+
     private var trainList: some View {
         VStack(spacing: 12) {
             if isLoading && services.isEmpty {
@@ -847,20 +900,34 @@ struct BoardScreen: View {
                         onSelectTrain: onOpenTrain
                     )
                 }
-                ForEach(Array(filtered.enumerated()), id: \.element.id) { index, train in
-                    TrainCard(
-                        train: train,
-                        mode: mode,
-                        accent: accent,
-                        callingPoints: callingPoints[train.serviceId] ?? []
-                    ) {
-                        onOpenTrain(train)
+                // Hour sections with sticky headers: the header pins below
+                // the top bar while its hour scrolls, so a long board reads
+                // as "this hour / next hour" instead of a 40-row wall.
+                LazyVStack(spacing: 12, pinnedViews: [.sectionHeaders]) {
+                    ForEach(hourGroups) { group in
+                        Section {
+                            ForEach(Array(group.trains.enumerated()), id: \.element.id) { index, train in
+                                TrainCard(
+                                    train: train,
+                                    mode: mode,
+                                    accent: accent,
+                                    callingPoints: callingPoints[train.serviceId] ?? []
+                                ) {
+                                    onOpenTrain(train)
+                                }
+                                .transition(.asymmetric(
+                                    insertion: .opacity.combined(with: .move(edge: .bottom)),
+                                    removal: .opacity
+                                ))
+                                .animation(
+                                    .easeOut(duration: 0.3).delay(Double(group.startIndex + index) * 0.04),
+                                    value: filtered.count
+                                )
+                            }
+                        } header: {
+                            hourHeader(group)
+                        }
                     }
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .move(edge: .bottom)),
-                        removal: .opacity
-                    ))
-                    .animation(.easeOut(duration: 0.3).delay(Double(index) * 0.04), value: filtered.count)
                 }
                 if timeOffset < 90 {
                     laterTrainsButton
@@ -1176,5 +1243,19 @@ private struct Line: Shape {
             p.move(to: CGPoint(x: rect.minX, y: rect.midY))
             p.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
         }
+    }
+}
+
+/// Hands out service IDs one at a time to the calling-point workers, keeping
+/// the number of in-flight detail requests bounded regardless of board size.
+private actor MissingServiceQueue {
+    private var ids: [String]
+
+    init(ids: [String]) {
+        self.ids = ids
+    }
+
+    func next() -> String? {
+        ids.isEmpty ? nil : ids.removeFirst()
     }
 }

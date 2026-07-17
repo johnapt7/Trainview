@@ -2,11 +2,16 @@ import Foundation
 
 @Observable
 final class FavouriteStationsStore {
+    /// One instance app-wide: the tab bar keeps several screens alive at
+    /// once, so they must observe the same list rather than each loading
+    /// their own snapshot from UserDefaults.
+    static let shared = FavouriteStationsStore()
+
     private static let key = "favouriteStations"
 
     var stations: [Station] = []
 
-    init() {
+    private init() {
         load()
     }
 

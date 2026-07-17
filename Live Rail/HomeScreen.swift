@@ -8,8 +8,7 @@ struct HomeScreen: View {
     let onPickStation: (Station) -> Void
     let onPickJourney: (RecentJourney) -> Void
     let onOpenTrackedTrain: () -> Void
-    let onOpenMyStations: () -> Void
-    let onOpenDisruptions: () -> Void
+    let onOpenNetworkMap: () -> Void
 
     @State private var fromQuery = ""
     @State private var toQuery = ""
@@ -23,11 +22,10 @@ struct HomeScreen: View {
     @State private var nearbyError = false
     @State private var nearbyTask: Task<Void, Never>?
     @State private var locationManager = LocationManager()
-    @State private var recentStore = RecentStationsStore()
-    @State private var favouriteStore = FavouriteStationsStore()
-    @State private var journeysStore = RecentJourneysStore()
+    @State private var recentStore = RecentStationsStore.shared
+    @State private var favouriteStore = FavouriteStationsStore.shared
+    @State private var journeysStore = RecentJourneysStore.shared
     @State private var showFAQ = false
-    @State private var tocIndicators: [TOCIndicator] = []
     private enum SlotField: Hashable { case from, to }
     @FocusState private var focusedField: SlotField?
 
@@ -72,20 +70,16 @@ struct HomeScreen: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     trackedTrainSection
-                    if !tocIndicators.isEmpty {
-                        networkStatusRow
-                    }
                     if let results = searchResults {
                         searchResultsSection(results)
                     } else {
                         if !journeysStore.journeys.isEmpty {
                             journeysSection
                         }
-                        if !favouriteStore.stations.isEmpty {
-                            favouriteChipsRow
-                        }
-                        myStationsRow
                         nearbySection
+                        if !recentStore.stations.isEmpty {
+                            recentSection
+                        }
                     }
                     footerView
                 }
@@ -125,9 +119,6 @@ struct HomeScreen: View {
         }
         .sheet(isPresented: $showFAQ) {
             FAQSheet()
-        }
-        .task {
-            tocIndicators = (try? await APIClient.shared.getTOCIndicators())?.indicators ?? []
         }
     }
 
@@ -247,7 +238,7 @@ struct HomeScreen: View {
     /// Dynamic Island on every device.
     private var pinnedTopBar: some View {
         HStack {
-            Color.clear.frame(width: 38, height: 38)
+            IconButton(systemName: "globe.europe.africa.fill", size: 14) { onOpenNetworkMap() }
             Spacer()
             Text("TRAINVIEW")
                 .font(.mono(11, weight: .semibold))
@@ -622,76 +613,6 @@ struct HomeScreen: View {
         .padding(.top, 24)
     }
 
-    // MARK: - My stations
-
-    /// Compact strip of favourite stations: one tap opens that board.
-    private var favouriteChipsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(favouriteStore.stations.prefix(8), id: \.code) { station in
-                    Button {
-                        onPickStation(station)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 9))
-                                .foregroundStyle(accent)
-                            Text(station.name)
-                                .font(.ui(13, weight: .semibold))
-                                .foregroundStyle(Theme.ink)
-                                .lineLimit(1)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Theme.card)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.line, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 18)
-        }
-        .padding(.top, 20)
-    }
-
-    /// The door to the full stations view (favourites, nearby, recent).
-    private var myStationsRow: some View {
-        Button(action: onOpenMyStations) {
-            HStack(spacing: 12) {
-                Image(systemName: "star.square.on.square")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
-                    .frame(width: 42, height: 42)
-                    .background(accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("My stations")
-                        .font(.display(18))
-                        .tracking(-0.1)
-                        .foregroundStyle(Theme.ink)
-                    Text("Favourites, nearby and recent")
-                        .font(.ui(11))
-                        .foregroundStyle(Theme.inkMute)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.inkMute)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(Theme.card)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .contentShape(RoundedRectangle(cornerRadius: 16))
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 18)
-        .padding(.top, 14)
-    }
-
     // MARK: - Nearby
 
     private var nearbySection: some View {
@@ -838,39 +759,32 @@ struct HomeScreen: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Network Status
+    // MARK: - Recent
 
-    private var disruptedCount: Int {
-        tocIndicators.filter { $0.status != "Good service" }.count
-    }
-
-    private var networkStatusRow: some View {
-        Button(action: onOpenDisruptions) {
-            HStack(spacing: 10) {
-                Image(systemName: disruptedCount > 0 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 14))
-                    .foregroundStyle(disruptedCount > 0 ? Theme.delayedText : Theme.perfGood)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(disruptedCount > 0 ? "\(disruptedCount) operator\(disruptedCount == 1 ? "" : "s") disrupted" : "All operators running normally")
-                        .font(.ui(13, weight: .semibold))
-                        .foregroundStyle(Theme.ink)
-                    Text("Network status")
-                        .font(.mono(10, weight: .medium))
-                        .tracking(0.3)
-                        .foregroundStyle(Theme.inkMute)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
+    /// Stations the user has opened before, straight off the home screen —
+    /// the browse-and-manage view they used to live in is gone; favourites
+    /// now have their own tab.
+    private var recentSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Recent")
+                    .font(.display(22))
+                    .tracking(-0.2)
+                Text("Stations you've opened before")
+                    .font(.mono(11, weight: .medium))
+                    .tracking(0.3)
                     .foregroundStyle(Theme.inkMute)
             }
-            .padding(14)
-            .background(disruptedCount > 0 ? Theme.warn.opacity(0.25) : Theme.card)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            StationListCard(
+                stations: recentStore.stations,
+                style: .recent,
+                accent: accent,
+                favouriteStore: favouriteStore,
+                onPick: pickStation
+            )
         }
-        .buttonStyle(.plain)
         .padding(.horizontal, 18)
-        .padding(.top, 20)
+        .padding(.top, 24)
     }
 
     // MARK: - Footer

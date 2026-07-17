@@ -82,7 +82,7 @@ final class APIClient {
 
     // MARK: - Board (Departures / Arrivals)
 
-    func getBoard(crs: String, type: String = "departures", rows: Int = 15, filterCrs: String? = nil, timeOffset: Int? = nil) async throws -> BoardResponse {
+    func getBoard(crs: String, type: String = "departures", rows: Int = 40, filterCrs: String? = nil, timeOffset: Int? = nil) async throws -> BoardResponse {
         var items = [
             URLQueryItem(name: "type", value: type),
             URLQueryItem(name: "rows", value: "\(rows)"),
@@ -268,5 +268,10 @@ final class APIClient {
             queryItems.append(URLQueryItem(name: "uid", value: uid))
         }
         return try await request("/movements/\(rid)", queryItems: queryItems)
+    }
+
+    /// Snapshot of every active train on the network, for the live 3D map.
+    func getActiveTrains() async throws -> ActiveTrainsResponse {
+        try await request("/movements")
     }
 }
