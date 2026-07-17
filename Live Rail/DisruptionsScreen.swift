@@ -170,10 +170,23 @@ struct DisruptionsScreen: View {
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                 Spacer()
-                Text("\(alert.disruptions.count) alert\(alert.disruptions.count == 1 ? "" : "s")")
+                let alertCount = alert.disruptions.count + (alert.announcements?.count ?? 0)
+                Text("\(alertCount) alert\(alertCount == 1 ? "" : "s")")
                     .font(.mono(10, weight: .semibold))
                     .tracking(0.4)
                     .foregroundStyle(Theme.delayedText)
+            }
+            ForEach(Array((alert.announcements ?? []).prefix(3).enumerated()), id: \.offset) { _, message in
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "megaphone.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(Theme.inkMute)
+                        .padding(.top, 3)
+                    Text(message.decodingHTMLEntities())
+                        .font(.ui(11))
+                        .foregroundStyle(Theme.inkSoft)
+                        .lineLimit(4)
+                }
             }
             ForEach(alert.disruptions.prefix(3)) { disruption in
                 VStack(alignment: .leading, spacing: 3) {
@@ -413,7 +426,10 @@ struct DisruptionsScreen: View {
                 }
             }
             for await result in group {
-                if let result, !result.disruptions.isEmpty {
+                // A station earns a card for incidents OR announcements —
+                // the board screen shows both, so this screen must too.
+                if let result,
+                   !result.disruptions.isEmpty || !(result.announcements ?? []).isEmpty {
                     alerts.append(result)
                 }
             }
