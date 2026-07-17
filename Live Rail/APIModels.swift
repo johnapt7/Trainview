@@ -416,35 +416,6 @@ struct LiveActivityRegistration: Encodable {
     let alightingCrs: String?
 }
 
-// MARK: - Active Trains Snapshot
-
-struct ActiveTrainsResponse: Codable {
-    let count: Int
-    let trains: [ActiveTrain]
-}
-
-/// One entry per active train from GET /api/movements. Location is the
-/// newest station-resolvable TRUST event; lateness and age reflect the
-/// newest event of any kind.
-struct ActiveTrain: Codable {
-    let rid: String
-    let uid: String?
-    let headcode: String
-    let toc: String
-    let eventType: String
-    let tiploc: String
-    let crs: String
-    let lat: Double
-    let lon: Double
-    let actualTimestamp: String
-    let ageSeconds: Int
-    let variationSeconds: Int
-    let variationStatus: String
-
-    /// Stable identity for dot tracking — RID when known, else CIF UID.
-    var key: String { rid.isEmpty ? (uid ?? "") : rid }
-}
-
 // MARK: - API Error
 
 struct APIErrorResponse: Codable {

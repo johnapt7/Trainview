@@ -269,9 +269,4 @@ final class APIClient {
         }
         return try await request("/movements/\(rid)", queryItems: queryItems)
     }
-
-    /// Snapshot of every active train on the network, for the live 3D map.
-    func getActiveTrains() async throws -> ActiveTrainsResponse {
-        try await request("/movements")
-    }
 }

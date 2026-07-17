@@ -5,7 +5,6 @@ enum AppScreen {
     case tabs
     case departures
     case journey
-    case networkMap
 }
 
 enum AppTab {
@@ -52,14 +51,6 @@ struct ContentView: View {
                     onBack: {
                         // Returns to whichever tab the board was opened from —
                         // tab selection persists underneath the board.
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .tabs
-                        }
-                    }
-                )
-            case .networkMap:
-                NetworkMapScreen(
-                    onBack: {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             screen = .tabs
                         }
@@ -172,11 +163,6 @@ struct ContentView: View {
                         }
                         withAnimation(.easeInOut(duration: 0.25)) {
                             screen = .journey
-                        }
-                    },
-                    onOpenNetworkMap: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            screen = .networkMap
                         }
                     }
                 )

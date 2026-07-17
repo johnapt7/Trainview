@@ -8,7 +8,6 @@ struct HomeScreen: View {
     let onPickStation: (Station) -> Void
     let onPickJourney: (RecentJourney) -> Void
     let onOpenTrackedTrain: () -> Void
-    let onOpenNetworkMap: () -> Void
 
     @State private var fromQuery = ""
     @State private var toQuery = ""
@@ -238,7 +237,7 @@ struct HomeScreen: View {
     /// Dynamic Island on every device.
     private var pinnedTopBar: some View {
         HStack {
-            IconButton(systemName: "globe.europe.africa.fill", size: 14) { onOpenNetworkMap() }
+            Color.clear.frame(width: 38, height: 38)
             Spacer()
             Text("TRAINVIEW")
                 .font(.mono(11, weight: .semibold))
