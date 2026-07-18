@@ -414,6 +414,9 @@ struct LiveActivityRegistration: Encodable {
     let uid: String?
     let boardingCrs: String
     let alightingCrs: String?
+    /// Station whose board produced serviceId (destination for arrivals) —
+    /// the server splits calling points around it, exactly as the app does.
+    let boardCrs: String?
 }
 
 // MARK: - API Error

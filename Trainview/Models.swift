@@ -97,6 +97,8 @@ struct Train: Identifiable {
     /// screen then presents origin → destination (the board station IS the
     /// destination) and tracking follows the train in from its origin.
     var isArrival: Bool = false
+    /// CRS of the service's origin, when the source (board row) knew it.
+    var originCrs: String = ""
 
     init(id: String, time: String, destination: String, destinationCrs: String = "", origin: String,
          via: String, platform: String, operator: String, operatorCode: String,
@@ -165,6 +167,7 @@ struct Train: Identifiable {
         self.destination = service.destination.decodingHTMLEntities()
         self.destinationCrs = service.destinationCrs
         self.origin = service.origin.decodingHTMLEntities()
+        self.originCrs = service.originCrs
         self.via = (service.destinationVia ?? "").decodingHTMLEntities()
         if let confirmed = service.platform {
             self.platform = confirmed

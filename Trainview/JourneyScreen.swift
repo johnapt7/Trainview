@@ -143,6 +143,11 @@ struct JourneyScreen: View {
         if let origin = details?.origin, !origin.crs.isEmpty {
             return Station(code: origin.crs, name: origin.name)
         }
+        // Board rows carry the origin CRS, so even before details load an
+        // arrival can never silently fall back to boarding at the terminus.
+        if !train.originCrs.isEmpty {
+            return Station(code: train.originCrs, name: train.origin)
+        }
         return boardingStation
     }
 
@@ -164,7 +169,7 @@ struct JourneyScreen: View {
     /// arrays can be trimmed, so `boardingIndex` only safely indexes the
     /// snapshot `stops`).
     private var boardingStop: Stop? {
-        if let match = displayedStops.first(where: { !$0.crs.isEmpty && $0.crs == boardingStation.code }) {
+        if let match = displayedStops.first(where: { !$0.crs.isEmpty && $0.crs == trackingBoardingStation.code }) {
             return match
         }
         guard stops.indices.contains(boardingIndex) else { return nil }
@@ -762,8 +767,8 @@ struct JourneyScreen: View {
         let destinationStop = isTrackingThis ? tracker.trackedStops.last : displayedStops.last
         let departTime = boardingStop.flatMap { TripShareText.bestTime(for: $0) } ?? train.time
         return TripShareText.compose(
-            originName: boardingStation.name,
-            platform: boardingStop?.platform ?? departPlatform,
+            originName: trackingBoardingStation.name,
+            platform: boardingStop?.platform ?? (train.isArrival ? "—" : departPlatform),
             destName: destinationStop?.station ?? destName,
             departTime: departTime,
             arrivalTime: destinationStop.flatMap { TripShareText.bestTime(for: $0) },

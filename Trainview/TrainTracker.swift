@@ -20,6 +20,8 @@ struct TrackingSnapshot: Codable {
     // relative to it). Optional: old snapshots predate it.
     let boardCode: String?
     let boardName: String?
+    /// Present (true) when this journey was tracked from an arrivals board.
+    let isArrival: Bool?
     let alightingCRS: String?
     let savedAt: Date
 }
@@ -124,6 +126,7 @@ final class TrainTracker {
             operatorCode: train.operatorCode,
             boardingCode: boardingStation.code, boardingName: boardingStation.name,
             boardCode: boardStation?.code, boardName: boardStation?.name,
+            isArrival: train.isArrival,
             alightingCRS: alightingCRS, savedAt: Date()
         )
         if let data = try? JSONEncoder().encode(snapshot) {
@@ -147,13 +150,14 @@ final class TrainTracker {
             return false
         }
 
-        let train = Train(
+        var train = Train(
             restoredId: snapshot.serviceId, time: snapshot.time,
             origin: snapshot.origin, destination: snapshot.destination,
             destinationCrs: snapshot.destinationCrs, platform: snapshot.platform,
             operator: snapshot.operatorName, operatorCode: snapshot.operatorCode,
             rid: snapshot.rid, uid: snapshot.uid
         )
+        train.isArrival = snapshot.isArrival ?? false
         let boarding = Station(code: snapshot.boardingCode, name: snapshot.boardingName)
         let board: Station
         if let code = snapshot.boardCode, let name = snapshot.boardName {
@@ -746,7 +750,8 @@ final class TrainTracker {
                 serviceId: train.serviceId,
                 uid: train.uid,
                 boardingCrs: boardingCRS,
-                alightingCrs: self?.alightingCRS
+                alightingCrs: self?.alightingCRS,
+                boardCrs: self?.boardStation?.code
             )
             for attempt in 0..<3 {
                 if (try? await APIClient.shared.registerLiveActivity(request)) != nil {

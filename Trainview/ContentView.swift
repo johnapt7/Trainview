@@ -145,11 +145,12 @@ struct ContentView: View {
             },
             onOpenTrackedTrain: {
                 // Mirrors the Live Activity deep link: land on the
-                // tracked journey with its original boarding station.
+                // tracked journey anchored to the station whose board it
+                // came from (the destination for tracked arrivals).
                 guard let train = tracker.trackedTrain else { return }
                 activeTrain = train
-                if let boarding = tracker.boardingStation {
-                    activeStation = boarding
+                if let anchor = tracker.boardStation ?? tracker.boardingStation {
+                    activeStation = anchor
                 }
                 withAnimation(.easeInOut(duration: 0.25)) {
                     screen = .journey
@@ -175,8 +176,11 @@ struct ContentView: View {
             guard await tracker.resumeIfNeeded(),
                   let train = tracker.trackedTrain else { return }
             activeTrain = train
-            if let boarding = tracker.boardingStation {
-                activeStation = boarding
+            // The journey screen's data is relative to the board station
+            // (destination for arrivals) — anchor there, not where the
+            // user boards.
+            if let anchor = tracker.boardStation ?? tracker.boardingStation {
+                activeStation = anchor
             }
             withAnimation(.easeInOut(duration: 0.25)) {
                 screen = .journey

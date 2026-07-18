@@ -48,7 +48,14 @@ struct TrackingConfirmationSheet: View {
         .presentationDetents([.fraction(0.8)])
         .presentationDragIndicator(.hidden)
         .onAppear {
-            alightingCRS = alightingOptions.last?.crs ?? ""
+            // Arrivals default to getting off at the arrivals-board station —
+            // the service may continue beyond it (mid-route arrivals board).
+            if train.isArrival,
+               let atBoard = alightingOptions.first(where: { $0.crs == boardStation.code }) {
+                alightingCRS = atBoard.crs
+            } else {
+                alightingCRS = alightingOptions.last?.crs ?? ""
+            }
         }
     }
 
