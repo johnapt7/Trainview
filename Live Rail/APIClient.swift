@@ -6,6 +6,7 @@ enum APIError: Error, LocalizedError {
     case httpError(statusCode: Int, apiError: APIErrorResponse?)
     case decodingError(Error)
     case noData
+    case unauthorized
 
     var errorDescription: String? {
         switch self {
@@ -20,6 +21,8 @@ enum APIError: Error, LocalizedError {
             return "Data error: \(error.localizedDescription)"
         case .noData:
             return "No data received"
+        case .unauthorized:
+            return "Signed out"
         }
     }
 }
@@ -32,6 +35,11 @@ final class APIClient {
     private let session: URLSession
     private let decoder: JSONDecoder
 
+    /// Supplies the account session token, set by AccountStore at startup.
+    /// When non-nil, every request carries it as a bearer header — harmless
+    /// on public endpoints, required on /account and /auth/session.
+    var sessionTokenProvider: (() -> String?)?
+
     private init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
@@ -39,6 +47,14 @@ final class APIClient {
         self.session = URLSession(configuration: config)
 
         self.decoder = JSONDecoder()
+    }
+
+    private func authorizedRequest(url: URL) -> URLRequest {
+        var request = URLRequest(url: url)
+        if let token = sessionTokenProvider?() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        return request
     }
 
     // MARK: - Generic Request
@@ -59,7 +75,7 @@ final class APIClient {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(from: url)
+            (data, response) = try await session.data(for: authorizedRequest(url: url))
         } catch {
             throw APIError.networkError(error)
         }
@@ -69,10 +85,57 @@ final class APIClient {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            if httpResponse.statusCode == 401 { throw APIError.unauthorized }
             let apiError = try? decoder.decode(APIErrorResponse.self, from: data)
             throw APIError.httpError(statusCode: httpResponse.statusCode, apiError: apiError)
         }
 
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw APIError.decodingError(error)
+        }
+    }
+
+    /// Request with a method and JSON body, returning a decoded response.
+    /// Used by the account endpoints (POST/PUT/DELETE).
+    private func send<T: Decodable, Body: Encodable>(_ method: String, _ path: String, body: Body) async throws -> T {
+        var request = try methodRequest(method, path)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+        return try await perform(request)
+    }
+
+    /// Body-less variant of `send` (DELETE endpoints).
+    private func send<T: Decodable>(_ method: String, _ path: String) async throws -> T {
+        try await perform(try methodRequest(method, path))
+    }
+
+    private func methodRequest(_ method: String, _ path: String) throws -> URLRequest {
+        guard let url = URL(string: "\(baseURL)\(path)") else {
+            throw APIError.invalidURL
+        }
+        var request = authorizedRequest(url: url)
+        request.httpMethod = method
+        return request
+    }
+
+    private func perform<T: Decodable>(_ request: URLRequest) async throws -> T {
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw APIError.networkError(error)
+        }
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.noData
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if httpResponse.statusCode == 401 { throw APIError.unauthorized }
+            let apiError = try? decoder.decode(APIErrorResponse.self, from: data)
+            throw APIError.httpError(statusCode: httpResponse.statusCode, apiError: apiError)
+        }
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
@@ -268,5 +331,40 @@ final class APIClient {
             queryItems.append(URLQueryItem(name: "uid", value: uid))
         }
         return try await request("/movements/\(rid)", queryItems: queryItems)
+    }
+
+    // MARK: - Account
+
+    func signInWithApple(identityToken: String, fullName: String?, authorizationCode: String?) async throws -> AuthResponse {
+        struct SignInBody: Encodable {
+            let identityToken: String
+            let fullName: String?
+            let authorizationCode: String?
+        }
+        return try await send("POST", "/auth/apple", body: SignInBody(
+            identityToken: identityToken, fullName: fullName, authorizationCode: authorizationCode
+        ))
+    }
+
+    func signOut() async throws {
+        struct SignOutResponse: Decodable { let signedOut: Bool? }
+        let _: SignOutResponse = try await send("DELETE", "/auth/session")
+    }
+
+    func deleteAccount() async throws {
+        struct DeleteResponse: Decodable { let deleted: Bool? }
+        let _: DeleteResponse = try await send("DELETE", "/account")
+    }
+
+    func getAccountStations() async throws -> StationsPayload {
+        try await request("/account/stations")
+    }
+
+    func putAccountStations(home: [SyncedStation], favourites: [SyncedStation]) async throws -> StationsPayload {
+        struct PutBody: Encodable {
+            let home: [SyncedStation]
+            let favourites: [SyncedStation]
+        }
+        return try await send("PUT", "/account/stations", body: PutBody(home: home, favourites: favourites))
     }
 }

@@ -93,6 +93,8 @@ struct ContentView: View {
             } else {
                 Task { _ = await tracker.resumeIfNeeded() }
             }
+            // Pull synced stations (no-op when signed out).
+            AccountStore.shared.refresh()
             #if DEBUG
             // Testing hooks (debug builds only):
             // `simctl launch <udid> <bundle> -openTab disruptions` lands on
@@ -132,6 +134,9 @@ struct ContentView: View {
             // Live Activity snap up to date.
             if phase == .active {
                 tracker.pollNow()
+                // Foreground pull of synced stations (and retry of any
+                // pending upload). No-op when signed out.
+                AccountStore.shared.refresh()
             }
         }
     }

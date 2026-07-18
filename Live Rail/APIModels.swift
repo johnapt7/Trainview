@@ -423,3 +423,38 @@ struct APIErrorResponse: Codable {
     let code: String
     let message: String
 }
+
+// MARK: - Account
+
+struct AuthResponse: Codable {
+    let token: String
+    let user: AccountUser
+}
+
+struct AccountUser: Codable {
+    let id: String
+    let email: String?
+    let displayName: String?
+}
+
+struct SyncedStation: Codable {
+    let crs: String
+    let name: String
+    let isInterchange: Bool
+}
+
+struct StationsPayload: Codable {
+    let home: [SyncedStation]
+    let favourites: [SyncedStation]
+    let updatedAt: String?
+}
+
+extension SyncedStation {
+    init(_ station: Station) {
+        self.init(crs: station.code, name: station.name, isInterchange: station.isInterchange)
+    }
+
+    var asStation: Station {
+        Station(code: crs, name: name, isInterchange: isInterchange)
+    }
+}

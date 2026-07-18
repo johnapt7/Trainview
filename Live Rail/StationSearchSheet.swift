@@ -3,6 +3,10 @@ import SwiftUI
 struct StationSearchSheet: View {
     let currentStation: String
     let onSelect: (Station) -> Void
+    // Defaulted so the original destination-filter call site is unchanged;
+    // the account sheet reuses this as a home-station picker.
+    var kicker: String = "FILTER BY DESTINATION"
+    var title: String = "Going to..."
     @Environment(\.dismiss) private var dismiss
 
     @State private var query = ""
@@ -35,11 +39,11 @@ struct StationSearchSheet: View {
 
     private var header: some View {
         VStack(spacing: 6) {
-            Text("FILTER BY DESTINATION")
+            Text(kicker)
                 .font(.mono(10, weight: .semibold))
                 .tracking(1.5)
                 .foregroundStyle(Theme.inkMute)
-            Text("Going to...")
+            Text(title)
                 .font(.display(26, weight: .medium))
                 .tracking(-0.3)
         }

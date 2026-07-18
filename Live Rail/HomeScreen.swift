@@ -24,7 +24,11 @@ struct HomeScreen: View {
     @State private var recentStore = RecentStationsStore.shared
     @State private var favouriteStore = FavouriteStationsStore.shared
     @State private var journeysStore = RecentJourneysStore.shared
+    @State private var homeStore = HomeStationsStore.shared
     @State private var showFAQ = false
+    @State private var showAccount = false
+    @State private var boardsRefreshID = UUID()
+    @Environment(\.scenePhase) private var scenePhase
     private enum SlotField: Hashable { case from, to }
     @FocusState private var focusedField: SlotField?
 
@@ -72,6 +76,9 @@ struct HomeScreen: View {
                     if let results = searchResults {
                         searchResultsSection(results)
                     } else {
+                        if !homeStore.stations.isEmpty {
+                            homeStationsSection
+                        }
                         if !journeysStore.journeys.isEmpty {
                             journeysSection
                         }
@@ -119,6 +126,48 @@ struct HomeScreen: View {
         .sheet(isPresented: $showFAQ) {
             FAQSheet()
         }
+        .sheet(isPresented: $showAccount) {
+            AccountSheet(accent: accent)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Refetch the pinned boards whenever the app comes back.
+            if phase == .active {
+                boardsRefreshID = UUID()
+            }
+        }
+    }
+
+    // MARK: - Home stations
+
+    private var homeStationsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Home stations")
+                        .font(.display(22))
+                        .tracking(-0.2)
+                    Text("Live departures from your stations")
+                        .font(.mono(11, weight: .medium))
+                        .tracking(0.3)
+                        .foregroundStyle(Theme.inkMute)
+                }
+                Spacer()
+                IconButton(systemName: "plus.circle", size: 14) { showAccount = true }
+            }
+            VStack(spacing: 10) {
+                ForEach(homeStore.stations) { station in
+                    HomeStationCard(
+                        station: station,
+                        accent: accent,
+                        onOpen: onPickStation,
+                        onRemove: { homeStore.remove($0) },
+                        refreshID: boardsRefreshID
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 18)
     }
 
     // MARK: - Data fetching
@@ -237,7 +286,7 @@ struct HomeScreen: View {
     /// Dynamic Island on every device.
     private var pinnedTopBar: some View {
         HStack {
-            Color.clear.frame(width: 38, height: 38)
+            IconButton(systemName: "person.crop.circle", size: 14) { showAccount = true }
             Spacer()
             Text("TRAINVIEW")
                 .font(.mono(11, weight: .semibold))
