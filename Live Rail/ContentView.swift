@@ -86,7 +86,13 @@ struct ContentView: View {
             }
             // Pick tracking back up after a relaunch so a live journey (and
             // its Live Activity) survives force-quits and Xcode reruns.
-            Task { _ = await tracker.resumeIfNeeded() }
+            // A notification tap that launched the app routes straight to the
+            // journey; its didReceive ran before this view existed.
+            if NotificationPresenter.shared.consumePendingJourneyOpen() {
+                openTrackedJourney()
+            } else {
+                Task { _ = await tracker.resumeIfNeeded() }
+            }
             #if DEBUG
             // Testing hooks (debug builds only):
             // `simctl launch <udid> <bundle> -openTab disruptions` lands on
@@ -112,19 +118,13 @@ struct ContentView: View {
         }
         .onOpenURL { url in
             guard url.scheme == "liverail", url.host == "journey" else { return }
-            // Restore tracking first if the app was relaunched — the tap on
-            // the Live Activity must always land on its journey.
-            Task {
-                guard await tracker.resumeIfNeeded(),
-                      let train = tracker.trackedTrain else { return }
-                activeTrain = train
-                if let boarding = tracker.boardingStation {
-                    activeStation = boarding
-                }
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    screen = .journey
-                }
-            }
+            openTrackedJourney()
+        }
+        // Notification taps (departure reminders, delay/platform alerts) land
+        // here via the delegate — same destination as a Live Activity tap.
+        .onReceive(NotificationCenter.default.publisher(for: NotificationPresenter.journeyTapNotification)) { _ in
+            _ = NotificationPresenter.shared.consumePendingJourneyOpen()
+            openTrackedJourney()
         }
         .onChange(of: scenePhase) { _, phase in
             // Returning to the foreground: refresh immediately instead of
@@ -186,6 +186,23 @@ struct ContentView: View {
         pendingJourneyFilter = nil
         withAnimation(.easeInOut(duration: 0.25)) {
             screen = .departures
+        }
+    }
+
+    /// Lands on the tracked journey's screen, restoring tracking first if the
+    /// app was relaunched. Shared by Live Activity taps (via liverail:// URL)
+    /// and notification taps — both must always reach the live journey.
+    private func openTrackedJourney() {
+        Task {
+            guard await tracker.resumeIfNeeded(),
+                  let train = tracker.trackedTrain else { return }
+            activeTrain = train
+            if let boarding = tracker.boardingStation {
+                activeStation = boarding
+            }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                screen = .journey
+            }
         }
     }
 }
