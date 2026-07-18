@@ -19,7 +19,7 @@
                BlueprintIdentifier = "7D5973B22F9EC359001F5F57"
                BuildableName = "TrainTrackingWidgetExtension.appex"
                BlueprintName = "TrainTrackingWidgetExtension"
-               ReferencedContainer = "container:Live Rail.xcodeproj">
+               ReferencedContainer = "container:Trainview.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -31,9 +31,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "7D5973942F9EC357001F5F57"
-               BuildableName = "Live Rail.app"
-               BlueprintName = "Live Rail"
-               ReferencedContainer = "container:Live Rail.xcodeproj">
+               BuildableName = "Trainview.app"
+               BlueprintName = "Trainview"
+               ReferencedContainer = "container:Trainview.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -62,9 +62,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7D5973942F9EC357001F5F57"
-            BuildableName = "Live Rail.app"
-            BlueprintName = "Live Rail"
-            ReferencedContainer = "container:Live Rail.xcodeproj">
+            BuildableName = "Trainview.app"
+            BlueprintName = "Trainview"
+            ReferencedContainer = "container:Trainview.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <EnvironmentVariables>
@@ -98,9 +98,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7D5973942F9EC357001F5F57"
-            BuildableName = "Live Rail.app"
-            BlueprintName = "Live Rail"
-            ReferencedContainer = "container:Live Rail.xcodeproj">
+            BuildableName = "Trainview.app"
+            BlueprintName = "Trainview"
+            ReferencedContainer = "container:Trainview.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

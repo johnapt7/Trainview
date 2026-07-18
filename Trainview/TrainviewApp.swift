@@ -1,6 +1,6 @@
 //
-//  Live_RailApp.swift
-//  Live Rail
+//  TrainviewApp.swift
+//  Trainview
 //
 //  Created by John Thompson on 26/04/2026.
 //
@@ -50,7 +50,7 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
 }
 
 @main
-struct Live_RailApp: App {
+struct TrainviewApp: App {
     init() {
         UNUserNotificationCenter.current().delegate = NotificationPresenter.shared
     }

@@ -35,7 +35,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		7D5973952F9EC357001F5F57 /* Live Rail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Live Rail.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		7D5973952F9EC357001F5F57 /* Trainview.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Trainview.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7D5973B02F9EC359001F5F57 /* TrainTrackingWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TrainTrackingWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -50,9 +50,9 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		7D5973972F9EC357001F5F57 /* Live Rail */ = {
+		7D5973972F9EC357001F5F57 /* Trainview */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "Live Rail";
+			path = "Trainview";
 			sourceTree = "<group>";
 		};
 		7D5973B12F9EC359001F5F57 /* TrainTrackingWidget */ = {
@@ -86,7 +86,7 @@
 		7D59738C2F9EC357001F5F57 = {
 			isa = PBXGroup;
 			children = (
-				7D5973972F9EC357001F5F57 /* Live Rail */,
+				7D5973972F9EC357001F5F57 /* Trainview */,
 				7D5973B12F9EC359001F5F57 /* TrainTrackingWidget */,
 				7D5973962F9EC357001F5F57 /* Products */,
 			);
@@ -95,7 +95,7 @@
 		7D5973962F9EC357001F5F57 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				7D5973952F9EC357001F5F57 /* Live Rail.app */,
+				7D5973952F9EC357001F5F57 /* Trainview.app */,
 				7D5973B02F9EC359001F5F57 /* TrainTrackingWidgetExtension.appex */,
 			);
 			name = Products;
@@ -104,9 +104,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		7D5973942F9EC357001F5F57 /* Live Rail */ = {
+		7D5973942F9EC357001F5F57 /* Trainview */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 7D5973A02F9EC358001F5F57 /* Build configuration list for PBXNativeTarget "Live Rail" */;
+			buildConfigurationList = 7D5973A02F9EC358001F5F57 /* Build configuration list for PBXNativeTarget "Trainview" */;
 			buildPhases = (
 				7D5973912F9EC357001F5F57 /* Sources */,
 				7D5973922F9EC357001F5F57 /* Frameworks */,
@@ -119,13 +119,13 @@
 				7D5973BB2F9EC359001F5F57 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				7D5973972F9EC357001F5F57 /* Live Rail */,
+				7D5973972F9EC357001F5F57 /* Trainview */,
 			);
-			name = "Live Rail";
+			name = "Trainview";
 			packageProductDependencies = (
 			);
-			productName = "Live Rail";
-			productReference = 7D5973952F9EC357001F5F57 /* Live Rail.app */;
+			productName = "Trainview";
+			productReference = 7D5973952F9EC357001F5F57 /* Trainview.app */;
 			productType = "com.apple.product-type.application";
 		};
 		7D5973B22F9EC359001F5F57 /* TrainTrackingWidgetExtension */ = {
@@ -168,7 +168,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 7D5973902F9EC357001F5F57 /* Build configuration list for PBXProject "Live Rail" */;
+			buildConfigurationList = 7D5973902F9EC357001F5F57 /* Build configuration list for PBXProject "Trainview" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -182,7 +182,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				7D5973942F9EC357001F5F57 /* Live Rail */,
+				7D5973942F9EC357001F5F57 /* Trainview */,
 				7D5973B22F9EC359001F5F57 /* TrainTrackingWidgetExtension */,
 			);
 		};
@@ -357,10 +357,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "Live Rail/Live Rail.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "Trainview/Trainview.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4NSLH85L95;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -396,10 +396,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "Live Rail/Live Rail.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "Trainview/Trainview.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4NSLH85L95;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -435,7 +435,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4NSLH85L95;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainTrackingWidget/Info.plist;
@@ -464,7 +464,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4NSLH85L95;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainTrackingWidget/Info.plist;
@@ -491,7 +491,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		7D5973902F9EC357001F5F57 /* Build configuration list for PBXProject "Live Rail" */ = {
+		7D5973902F9EC357001F5F57 /* Build configuration list for PBXProject "Trainview" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7D59739E2F9EC358001F5F57 /* Debug */,
@@ -500,7 +500,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		7D5973A02F9EC358001F5F57 /* Build configuration list for PBXNativeTarget "Live Rail" */ = {
+		7D5973A02F9EC358001F5F57 /* Build configuration list for PBXNativeTarget "Trainview" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7D5973A12F9EC358001F5F57 /* Debug */,
