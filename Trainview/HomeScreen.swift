@@ -22,12 +22,14 @@ struct HomeScreen: View {
     @State private var nearbyTask: Task<Void, Never>?
     @State private var locationManager = LocationManager()
     @State private var recentStore = RecentStationsStore.shared
-    @State private var favouriteStore = FavouriteStationsStore.shared
     @State private var journeysStore = RecentJourneysStore.shared
     @State private var homeStore = HomeStationsStore.shared
     @State private var showFAQ = false
     @State private var showAccount = false
+    @State private var showDisruptions = false
     @State private var boardsRefreshID = UUID()
+    // Nearby is a dropdown; remember the choice between launches.
+    @AppStorage("nearbyExpanded") private var nearbyExpanded = false
     @Environment(\.scenePhase) private var scenePhase
     private enum SlotField: Hashable { case from, to }
     @FocusState private var focusedField: SlotField?
@@ -128,6 +130,10 @@ struct HomeScreen: View {
         }
         .sheet(isPresented: $showAccount) {
             AccountSheet(accent: accent)
+        }
+        .sheet(isPresented: $showDisruptions) {
+            DisruptionsScreen(accent: accent)
+                .presentationDetents([.large])
         }
         .onChange(of: scenePhase) { _, phase in
             // Refetch the pinned boards whenever the app comes back.
@@ -286,14 +292,22 @@ struct HomeScreen: View {
     /// Dynamic Island on every device.
     private var pinnedTopBar: some View {
         HStack {
-            IconButton(systemName: "person.crop.circle", size: 14) { showAccount = true }
+            HStack(spacing: 8) {
+                IconButton(systemName: "person.crop.circle", size: 14) { showAccount = true }
+                // Invisible twin of the right cluster's second icon so the
+                // wordmark stays optically centred.
+                Color.clear.frame(width: 38, height: 38)
+            }
             Spacer()
             Text("TRAINVIEW")
                 .font(.mono(11, weight: .semibold))
                 .tracking(2)
                 .foregroundStyle(Theme.ink)
             Spacer()
-            IconButton(systemName: "info.circle", size: 14) { showFAQ = true }
+            HStack(spacing: 8) {
+                IconButton(systemName: "exclamationmark.triangle", size: 14) { showDisruptions = true }
+                IconButton(systemName: "info.circle", size: 14) { showFAQ = true }
+            }
         }
         .padding(.horizontal, 18)
         .padding(.top, 8)
@@ -500,7 +514,7 @@ struct HomeScreen: View {
                     stations: visible,
                     style: .search,
                     accent: accent,
-                    favouriteStore: favouriteStore,
+                    homeStore: homeStore,
                     onPick: pickStation
                 )
             }
@@ -665,59 +679,79 @@ struct HomeScreen: View {
 
     private var nearbySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack {
-                    Text("Nearby stations")
-                        .font(.display(22))
-                        .tracking(-0.2)
-                    Spacer()
-                    if !nearbyStations.isEmpty {
-                        HStack(spacing: 5) {
-                            Image(systemName: "mappin")
-                                .font(.system(size: 8))
-                            Text("Near you")
-                                .font(.mono(10, weight: .semibold))
-                                .tracking(0.4)
-                        }
-                        .foregroundStyle(Theme.ink)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(accent)
-                        .clipShape(Capsule())
-                    }
+            // Dropdown header: the whole row toggles the section open.
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    nearbyExpanded.toggle()
                 }
-                Text("Based on your location")
-                    .font(.mono(11, weight: .medium))
-                    .tracking(0.3)
-                    .foregroundStyle(Theme.inkMute)
-            }
-
-            if !locationManager.hasPermission {
-                locationPrompt
-            } else if nearbyError {
-                nearbyErrorCard
-            } else if !nearbyDidLoad {
-                loadingCard
-            } else if nearbyStations.isEmpty {
-                VStack(spacing: 4) {
-                    Text("No stations nearby")
-                        .font(.display(18))
-                    Text("Try searching by name or code")
-                        .font(.ui(11))
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text("Nearby stations")
+                            .font(.display(22))
+                            .tracking(-0.2)
+                            .foregroundStyle(Theme.ink)
+                        Spacer()
+                        if !nearbyStations.isEmpty && nearbyExpanded {
+                            HStack(spacing: 5) {
+                                Image(systemName: "mappin")
+                                    .font(.system(size: 8))
+                                Text("Near you")
+                                    .font(.mono(10, weight: .semibold))
+                                    .tracking(0.4)
+                            }
+                            .foregroundStyle(Theme.ink)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(accent)
+                            .clipShape(Capsule())
+                        }
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.inkMute)
+                            .rotationEffect(.degrees(nearbyExpanded ? 180 : 0))
+                            .padding(.leading, 8)
+                    }
+                    Text(nearbyExpanded ? "Based on your location" : "Tap to show stations near you")
+                        .font(.mono(11, weight: .medium))
+                        .tracking(0.3)
                         .foregroundStyle(Theme.inkMute)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 28)
-                .background(Theme.card)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-            } else {
-                StationListCard(
-                    stations: nearbyStations,
-                    style: .nearby,
-                    accent: accent,
-                    favouriteStore: favouriteStore,
-                    onPick: pickStation
-                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if nearbyExpanded {
+                Group {
+                    if !locationManager.hasPermission {
+                        locationPrompt
+                    } else if nearbyError {
+                        nearbyErrorCard
+                    } else if !nearbyDidLoad {
+                        loadingCard
+                    } else if nearbyStations.isEmpty {
+                        VStack(spacing: 4) {
+                            Text("No stations nearby")
+                                .font(.display(18))
+                            Text("Try searching by name or code")
+                                .font(.ui(11))
+                                .foregroundStyle(Theme.inkMute)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 28)
+                        .background(Theme.card)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                    } else {
+                        StationListCard(
+                            stations: nearbyStations,
+                            style: .nearby,
+                            accent: accent,
+                            homeStore: homeStore,
+                            onPick: pickStation
+                        )
+                    }
+                }
+                .transition(.opacity.combined(with: .offset(y: -6)))
             }
         }
         .padding(.horizontal, 18)
@@ -809,9 +843,7 @@ struct HomeScreen: View {
 
     // MARK: - Recent
 
-    /// Stations the user has opened before, straight off the home screen —
-    /// the browse-and-manage view they used to live in is gone; favourites
-    /// now have their own tab.
+    /// Stations the user has opened before, straight off the home screen.
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
@@ -827,7 +859,7 @@ struct HomeScreen: View {
                 stations: recentStore.stations,
                 style: .recent,
                 accent: accent,
-                favouriteStore: favouriteStore,
+                homeStore: homeStore,
                 onPick: pickStation
             )
         }

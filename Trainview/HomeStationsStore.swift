@@ -3,7 +3,7 @@ import SwiftUI
 
 @Observable
 final class HomeStationsStore {
-    /// One instance app-wide, same reasoning as FavouriteStationsStore.
+    /// One instance app-wide: several screens observe the same list.
     static let shared = HomeStationsStore()
 
     private static let key = "homeStations"

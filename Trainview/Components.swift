@@ -2,16 +2,16 @@ import SwiftUI
 
 /// How a station row presents itself; `.nearby` adds the distance readout.
 enum StationRowStyle {
-    case nearby, search, recent, favourite
+    case nearby, search, recent
 }
 
-/// The shared station list card: ink code tags, star toggles, hairline
-/// dividers. Used by the home search results and the My Stations screen.
+/// The shared station list card: ink code tags, home-station toggles,
+/// hairline dividers. Used by the home search/nearby/recent lists.
 struct StationListCard: View {
     let stations: [Station]
     let style: StationRowStyle
     let accent: Color
-    let favouriteStore: FavouriteStationsStore
+    let homeStore: HomeStationsStore
     let onPick: (Station) -> Void
 
     var body: some View {
@@ -57,14 +57,20 @@ struct StationListCard: View {
                     }
                     .buttonStyle(.plain)
 
+                    // House toggle: adds/removes the station from home
+                    // stations (the pinned live-departure cards on Home).
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            favouriteStore.toggle(station)
+                            if homeStore.contains(station) {
+                                homeStore.remove(station)
+                            } else {
+                                homeStore.add(station)
+                            }
                         }
                     } label: {
-                        Image(systemName: favouriteStore.contains(station) ? "star.fill" : "star")
+                        Image(systemName: homeStore.contains(station) ? "house.fill" : "house")
                             .font(.system(size: 14))
-                            .foregroundStyle(favouriteStore.contains(station) ? accent : Theme.inkMute)
+                            .foregroundStyle(homeStore.contains(station) ? accent : Theme.inkMute)
                             .frame(width: 36, height: 36)
                             .contentShape(Rectangle())
                     }

@@ -71,7 +71,7 @@ struct AccountSheet: View {
     private var signedOutContent: some View {
         VStack(spacing: 18) {
             VStack(spacing: 8) {
-                Text("Sign in to set home stations and keep your favourites backed up across devices.")
+                Text("Sign in to keep your home stations backed up across devices.")
                     .font(.ui(14))
                     .foregroundStyle(Theme.ink)
                     .multilineTextAlignment(.center)

@@ -1,8 +1,9 @@
 import Foundation
 import AuthenticationServices
 
-/// Owns the Apple-account session and keeps home stations + favourites in
-/// sync with the backend. The app is fully functional signed out — both
+/// Owns the Apple-account session and keeps home stations in sync with
+/// the backend. (The API also carries a favourites list from the app's
+/// earlier design; it is sent empty and ignored on pull.) The app is fully functional signed out — both
 /// station stores stay local-first, and this store layers sync on top.
 ///
 /// Sync algorithm, in full: on sign-in, server wins unless the server is
@@ -98,9 +99,7 @@ final class AccountStore {
         do {
             let remote = try await APIClient.shared.getAccountStations()
             let localHome = HomeStationsStore.shared.stations
-            let localFavourites = FavouriteStationsStore.shared.stations
-            if remote.home.isEmpty && remote.favourites.isEmpty
-                && !(localHome.isEmpty && localFavourites.isEmpty) {
+            if remote.home.isEmpty && !localHome.isEmpty {
                 await pushNow()
             } else {
                 apply(remote)
@@ -133,7 +132,7 @@ final class AccountStore {
         do {
             _ = try await APIClient.shared.putAccountStations(
                 home: HomeStationsStore.shared.stations.map(SyncedStation.init),
-                favourites: FavouriteStationsStore.shared.stations.map(SyncedStation.init)
+                favourites: []
             )
             needsUpload = false
         } catch {
@@ -161,7 +160,6 @@ final class AccountStore {
     @MainActor
     private func apply(_ payload: StationsPayload) {
         HomeStationsStore.shared.replaceAll(payload.home.map(\.asStation), fromSync: true)
-        FavouriteStationsStore.shared.replaceAll(payload.favourites.map(\.asStation), fromSync: true)
     }
 
     @MainActor

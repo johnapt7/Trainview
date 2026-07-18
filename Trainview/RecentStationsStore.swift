@@ -2,7 +2,7 @@ import Foundation
 
 @Observable
 final class RecentStationsStore {
-    /// One instance app-wide — see FavouriteStationsStore.shared.
+    /// One instance app-wide — see HomeStationsStore.shared.
     static let shared = RecentStationsStore()
 
     private static let key = "recentStations"

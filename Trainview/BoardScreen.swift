@@ -40,7 +40,7 @@ struct BoardScreen: View {
     @State private var showFAQ = false
     @State private var filterDestination: Station?
     @State private var timeOffset: Int = 0
-    @State private var favouriteStore = FavouriteStationsStore.shared
+    @State private var homeStore = HomeStationsStore.shared
     @State private var journeysStore = RecentJourneysStore.shared
     @State private var stationDisruptions: [StationDisruption] = []
     @State private var disruptionsExpanded = false
@@ -55,7 +55,7 @@ struct BoardScreen: View {
     private static let autoRefreshInterval: TimeInterval = 45
 
     private var fastestDestinations: [Station] {
-        favouriteStore.stations.filter { $0.code != station.code }
+        homeStore.stations.filter { $0.code != station.code }
     }
 
     private var filtered: [Train] {
@@ -674,17 +674,17 @@ struct BoardScreen: View {
     // MARK: - Fastest Hint
 
     /// Shown in place of the fastest-departures strip until the user has
-    /// favourites (or dismisses it) — the strip is invisible otherwise and
-    /// nothing else explains what starring stations unlocks.
+    /// home stations (or dismisses it) — the strip is invisible otherwise
+    /// and nothing else explains what home stations unlock here.
     private var fastestHintCard: some View {
         HStack(spacing: 12) {
-            Image(systemName: "star")
+            Image(systemName: "house")
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.ink)
                 .frame(width: 34, height: 34)
                 .background(accent.opacity(0.35))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
-            Text("Star stations you travel to — the fastest trains to them will appear here.")
+            Text("Add home stations you travel to — the fastest trains to them will appear here.")
                 .font(.ui(12))
                 .foregroundStyle(Theme.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)

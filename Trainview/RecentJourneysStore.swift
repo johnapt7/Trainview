@@ -12,7 +12,7 @@ struct RecentJourney: Identifiable, Codable, Equatable {
 
 @Observable
 final class RecentJourneysStore {
-    /// One instance app-wide — see FavouriteStationsStore.shared.
+    /// One instance app-wide — see HomeStationsStore.shared.
     static let shared = RecentJourneysStore()
 
     private static let key = "recentJourneys"
