@@ -275,10 +275,15 @@ struct TrainTrackingLiveActivity: Widget {
         if let arrival = state.nextStopArrivalDate {
             let secondsUntil = arrival.timeIntervalSinceNow
             if secondsUntil > 0 && secondsUntil < 60 {
-                // Last minute: tight MM:SS countdown
+                // Last minute: tight MM:SS countdown. Timer-style Text claims
+                // unbounded width inside the Dynamic Island, which balloons the
+                // compact pill to full screen width — pin it to the exact size
+                // of "0:59" so the island stays a pill.
                 Text(timerInterval: Date()...arrival, countsDown: true, showsHours: false)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .monospacedDigit()
+                    .frame(width: 34)
+                    .multilineTextAlignment(.trailing)
             } else if secondsUntil > 0 {
                 // Otherwise: just minute count, no live tick (saves width)
                 let totalMinutes = Int((secondsUntil + 30) / 60)
