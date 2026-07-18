@@ -398,6 +398,30 @@ final class TrainTracker {
         return parts.count == 2 && Int(parts[0]) != nil && Int(parts[1]) != nil
     }
 
+    /// Whether the service is actually running behind, derived from the
+    /// times rather than an operator-published reason: an operator only
+    /// attaches a delayReason to notable disruption, so a train quietly
+    /// running minutes late would otherwise still read "on time". Any
+    /// upcoming stop expected later than scheduled (or a bare "Delayed"
+    /// estimate) counts.
+    static func isRunningLate(stops: [Stop]) -> Bool {
+        func minutes(_ s: String) -> Int? {
+            let parts = s.split(separator: ":")
+            guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]) else { return nil }
+            return h * 60 + m
+        }
+        return stops.contains { stop in
+            guard !stop.hasDeparted, let expected = stop.expectedTime else { return false }
+            if let exp = minutes(expected), let sched = minutes(stop.time) {
+                // Midnight-safe ordering: "late" is expected after scheduled
+                // by up to 12h; anything else (equal or early) is not late.
+                let diff = (exp - sched + 1440) % 1440
+                return diff >= 1 && diff <= 720
+            }
+            return expected.lowercased() == "delayed"
+        }
+    }
+
     static func timeHasPassed(_ timeStr: String) -> Bool {
         let now = Date()
         let cal = Calendar.current
@@ -562,7 +586,7 @@ final class TrainTracker {
 
         if details.isCancelled {
             trainStatus = .cancelled
-        } else if details.delayReason != nil {
+        } else if details.delayReason != nil || TrainTracker.isRunningLate(stops: trackedStops) {
             trainStatus = .delayed
         } else {
             trainStatus = .onTime
