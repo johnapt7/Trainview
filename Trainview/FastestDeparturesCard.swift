@@ -134,7 +134,7 @@ struct FastestDeparturesCard: View {
                         .foregroundStyle(Theme.cream)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                     if let platform = service.platform, !platform.isEmpty {
-                        Text("Platform \(platform)")
+                        Text("Plat. \(platform)")
                             .font(.mono(10, weight: .medium))
                             .foregroundStyle(Theme.inkMute)
                     }

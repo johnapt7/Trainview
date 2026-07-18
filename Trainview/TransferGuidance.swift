@@ -186,7 +186,7 @@ struct TransferOptionRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 3))
 
                 if let platform = option.leg1.platform, !platform.isEmpty {
-                    Text("Platform \(platform)")
+                    Text("Plat. \(platform)")
                         .font(.mono(10, weight: .medium))
                         .foregroundStyle(Theme.inkMute)
                 }

@@ -126,7 +126,7 @@ struct HomeStationCard: View {
             }
             Spacer()
             if let platform = service.platform {
-                Text("Platform \(platform)")
+                Text("Plat \(platform)")
                     .font(.mono(10, weight: .medium))
                     .foregroundStyle(Theme.inkMute)
             }

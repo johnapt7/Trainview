@@ -165,7 +165,7 @@ struct TrainTrackingLiveActivity: Widget {
                     WidgetDelayChip(minutes: d)
                 }
                 if let p = platform, !p.isEmpty, p != "—" {
-                    Text("Platform \(p)")
+                    Text("Plat \(p)")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 5)
