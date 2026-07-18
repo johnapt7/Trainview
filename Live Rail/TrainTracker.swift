@@ -361,9 +361,12 @@ final class TrainTracker {
     /// actual time for it. Schedule position alone is not evidence — LDBWS
     /// splits calling points relative to the queried board station, not the
     /// train's position, so "previous" stops may still be ahead of the train.
+    /// LDBWS frequently reports the actual as the literal string "On time"
+    /// rather than a clock time — that is still a positive "it happened"
+    /// report, so it counts as passed. "No report"/"Delayed" do not.
     static func hasBeenPassed(_ cp: CallingPointResponse) -> Bool {
         guard let at = cp.actualTime else { return false }
-        return isClockTime(at)
+        return isClockTime(at) || at.lowercased() == "on time"
     }
 
     /// Whether the boarding station has verifiably been departed: the next
