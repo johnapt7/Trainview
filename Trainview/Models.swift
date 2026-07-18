@@ -93,6 +93,10 @@ struct Train: Identifiable {
     let uid: String?
     let headcode: String?
     let rollingStock: RollingStockInfo?
+    /// True when this train was opened from an arrivals board: the journey
+    /// screen then presents origin → destination (the board station IS the
+    /// destination) and tracking follows the train in from its origin.
+    var isArrival: Bool = false
 
     init(id: String, time: String, destination: String, destinationCrs: String = "", origin: String,
          via: String, platform: String, operator: String, operatorCode: String,

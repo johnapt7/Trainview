@@ -87,7 +87,9 @@ struct TrackingConfirmationSheet: View {
                     .padding(.top, 6)
 
                 notificationRow("clock.badge.exclamationmark", "Departure reminder — 5 minutes before it leaves, with the platform")
-                notificationRow("tram.fill", "When your train departs \(boardingStation.name)")
+                notificationRow("tram.fill", train.isArrival
+                    ? "As the train travels in from \(boardingStation.name)"
+                    : "When your train departs \(boardingStation.name)")
                 notificationRow("arrow.left.arrow.right", "Platform changes and confirmations")
                 notificationRow("exclamationmark.triangle.fill", "Delays and cancellation")
                 notificationRow("mappin.and.ellipse", "Each stop along the way as the train calls")

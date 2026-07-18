@@ -8,10 +8,13 @@ struct BoardScreen: View {
 
     /// Seeds the destination filter so a saved journey opens the board
     /// already filtered, exactly as if the user had picked the destination
-    /// from the search sheet.
+    /// from the search sheet. `mode` is owned by the caller so the
+    /// departures/arrivals choice survives navigating into a train and back
+    /// (this view is recreated on return).
     init(
         station: Station,
         accent: Color,
+        mode: Binding<BoardMode>,
         initialFilterDestination: Station? = nil,
         onOpenTrain: @escaping (Train) -> Void,
         onBack: @escaping () -> Void
@@ -20,10 +23,11 @@ struct BoardScreen: View {
         self.accent = accent
         self.onOpenTrain = onOpenTrain
         self.onBack = onBack
+        _mode = mode
         _filterDestination = State(initialValue: initialFilterDestination)
     }
 
-    @State private var mode: BoardMode = .departures
+    @Binding var mode: BoardMode
     @State private var filter: FilterMode = .all
     @State private var services: [Train] = []
     @State private var isLoading = false
@@ -210,7 +214,11 @@ struct BoardScreen: View {
                 timeOffset: timeOffset != 0 ? timeOffset : nil
             )
             withAnimation(.easeOut(duration: 0.3)) {
-                services = response.services.map { Train(from: $0) }
+                services = response.services.map {
+                    var train = Train(from: $0)
+                    train.isArrival = mode == .arrivals
+                    return train
+                }
                 nrccMessages = response.nrccMessages ?? []
             }
             // When the server confirms it applied the destination filter

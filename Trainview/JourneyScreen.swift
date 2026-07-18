@@ -126,11 +126,23 @@ struct JourneyScreen: View {
             TrackingConfirmationSheet(
                 train: train,
                 stops: stops,
-                boardingStation: boardingStation,
+                boardingStation: trackingBoardingStation,
                 tracker: tracker,
                 accent: accent
             )
         }
+    }
+
+    /// Tracking an arrival means following the train IN from its origin —
+    /// the board station is where it terminates, so "boarding" there would
+    /// give tracking an empty journey. Departures track from the board
+    /// station as ever.
+    private var trackingBoardingStation: Station {
+        guard train.isArrival else { return boardingStation }
+        if let origin = details?.origin, !origin.crs.isEmpty {
+            return Station(code: origin.crs, name: origin.name)
+        }
+        return boardingStation
     }
 
     private var isTrackingThis: Bool {
@@ -855,8 +867,10 @@ struct JourneyScreen: View {
                     .foregroundStyle(Theme.inkSoft)
                 // The user's boarding station — train.time and the platform
                 // are both relative to it, so the origin name would mislead
-                // anyone boarding mid-route.
-                Text(boardingStation.name)
+                // anyone boarding mid-route. Opened from an arrivals board
+                // the board station IS the destination, so the left side
+                // shows where the service is coming from instead.
+                Text(train.isArrival ? train.origin : boardingStation.name)
                     .font(.display(22))
                     .tracking(-0.2)
                     .lineLimit(2)
@@ -866,7 +880,7 @@ struct JourneyScreen: View {
                     .tracking(0.5)
                     .textCase(.uppercase)
                     .foregroundStyle(Theme.inkSoft)
-                if boardingIndex > 0 {
+                if boardingIndex > 0 && !train.isArrival {
                     Text("Service from \(train.origin)")
                         .font(.mono(9))
                         .tracking(0.3)

@@ -20,6 +20,9 @@ struct ContentView: View {
     @State private var activeTrain: Train?
     @State private var activeStation: Station = Station(code: "KGX", name: "King's Cross")
     @State private var pendingJourneyFilter: Station?
+    // Owned here (not in BoardScreen) so departures/arrivals survives
+    // navigating into a train and back; reset when a new board opens.
+    @State private var boardMode: BoardMode = .departures
     @State private var tracker = TrainTracker()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -41,6 +44,7 @@ struct ContentView: View {
                 BoardScreen(
                     station: activeStation,
                     accent: accent,
+                    mode: $boardMode,
                     initialFilterDestination: pendingJourneyFilter,
                     onOpenTrain: { train in
                         activeTrain = train
@@ -189,6 +193,7 @@ struct ContentView: View {
     private func openBoard(_ station: Station) {
         activeStation = station
         pendingJourneyFilter = nil
+        boardMode = .departures
         withAnimation(.easeInOut(duration: 0.25)) {
             screen = .departures
         }
