@@ -57,24 +57,23 @@ struct StationListCard: View {
                     }
                     .buttonStyle(.plain)
 
-                    // House toggle: adds/removes the station from home
-                    // stations (the pinned live-departure cards on Home).
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            if homeStore.contains(station) {
+                    // Home-station badge: only rows that ARE home stations
+                    // carry the house (tap to remove). Adding happens via the
+                    // account sheet and the Home-stations section's plus.
+                    if homeStore.contains(station) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
                                 homeStore.remove(station)
-                            } else {
-                                homeStore.add(station)
                             }
+                        } label: {
+                            Image(systemName: "house.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(accent)
+                                .frame(width: 36, height: 36)
+                                .contentShape(Rectangle())
                         }
-                    } label: {
-                        Image(systemName: homeStore.contains(station) ? "house.fill" : "house")
-                            .font(.system(size: 14))
-                            .foregroundStyle(homeStore.contains(station) ? accent : Theme.inkMute)
-                            .frame(width: 36, height: 36)
-                            .contentShape(Rectangle())
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
                 .padding(.leading, 14)
                 .padding(.trailing, 6)
