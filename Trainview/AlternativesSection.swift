@@ -203,7 +203,7 @@ struct AlternativesSection: View {
                     .clipShape(RoundedRectangle(cornerRadius: 3))
 
                 if let platform = service.platform, !platform.isEmpty {
-                    Text("Plat. \(platform)")
+                    Text("Platform \(platform)")
                         .font(.mono(10, weight: .medium))
                         .foregroundStyle(Theme.inkMute)
                 }

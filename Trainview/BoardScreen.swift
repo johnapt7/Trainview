@@ -104,9 +104,9 @@ struct BoardScreen: View {
         if mins >= 60 {
             let h = mins / 60
             let m = mins % 60
-            span = m > 0 ? "\(h)H \(m)M" : "\(h)H"
+            span = m > 0 ? "\(h) HR \(m) MIN" : "\(h) HR"
         } else {
-            span = "\(mins)M"
+            span = "\(mins) MIN"
         }
         return timeOffset < 0 ? "\(span) AGO" : "IN \(span)"
     }
@@ -122,6 +122,7 @@ struct BoardScreen: View {
                     if !isArrival && !fastestDestinations.isEmpty {
                         FastestDeparturesCard(
                             originCrs: station.code,
+                            originName: station.name,
                             favourites: fastestDestinations,
                             accent: accent,
                             onOpenTrain: onOpenTrain

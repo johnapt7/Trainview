@@ -1455,7 +1455,7 @@ private struct StopRow: View {
                     CodeTag(text: "ARRIVE", bg: accent, fg: Theme.ink)
                 }
                 if stop.platform != "—" {
-                    Text("Plat. \(Text(stop.platform).bold())")
+                    Text("Platform \(Text(stop.platform).bold())")
                 }
             }
             .font(.mono(10, weight: .medium))

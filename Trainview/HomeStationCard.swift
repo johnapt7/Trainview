@@ -126,7 +126,7 @@ struct HomeStationCard: View {
             }
             Spacer()
             if let platform = service.platform {
-                Text("Plat \(platform)")
+                Text("Platform \(platform)")
                     .font(.mono(10, weight: .medium))
                     .foregroundStyle(Theme.inkMute)
             }
@@ -154,7 +154,7 @@ struct HomeStationCard: View {
 
     private func statusNote(_ service: BoardService) -> String? {
         if service.isCancelled { return "Cancelled" }
-        if isDelayed(service) { return "Sched \(service.scheduledTime)" }
+        if isDelayed(service) { return "Scheduled \(service.scheduledTime)" }
         return nil
     }
 

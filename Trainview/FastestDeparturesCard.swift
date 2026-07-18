@@ -6,6 +6,7 @@ import SwiftUI
 /// muted tile with the upstream reason.
 struct FastestDeparturesCard: View {
     let originCrs: String
+    let originName: String
     let favourites: [Station]
     let accent: Color
     let onOpenTrain: (Train) -> Void
@@ -36,7 +37,7 @@ struct FastestDeparturesCard: View {
                 Image(systemName: "bolt.horizontal.fill")
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.inkMute)
-                Text("FASTEST FROM \(originCrs)")
+                Text("FASTEST FROM \(originName.uppercased())")
                     .font(.mono(10, weight: .semibold))
                     .tracking(1.2)
                     .foregroundStyle(Theme.inkMute)
@@ -133,7 +134,7 @@ struct FastestDeparturesCard: View {
                         .foregroundStyle(Theme.cream)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                     if let platform = service.platform, !platform.isEmpty {
-                        Text("Plat. \(platform)")
+                        Text("Platform \(platform)")
                             .font(.mono(10, weight: .medium))
                             .foregroundStyle(Theme.inkMute)
                     }
