@@ -16,6 +16,10 @@ struct TrackingSnapshot: Codable {
     let operatorCode: String
     let boardingCode: String
     let boardingName: String
+    // The station whose board produced serviceId (calling points are
+    // relative to it). Optional: old snapshots predate it.
+    let boardCode: String?
+    let boardName: String?
     let alightingCRS: String?
     let savedAt: Date
 }
@@ -26,6 +30,10 @@ final class TrainTracker {
     var trackedTrain: Train?
     var trackedStops: [Stop] = []
     var boardingStation: Station?
+    /// The station the serviceId's board belongs to — LDBWS calling points
+    /// are split around it. Equal to boardingStation for departures; the
+    /// DESTINATION for arrivals tracked from an arrivals board.
+    var boardStation: Station?
     var currentStopIndex: Int = 0
     var nextStopIndex: Int = 1
     var progressBetweenStops: Double = 0
@@ -56,11 +64,12 @@ final class TrainTracker {
 
     private static let snapshotKey = "trackingSnapshot"
 
-    func startTracking(train: Train, stops: [Stop], boardingStation: Station, alightingCRS: String? = nil) {
+    func startTracking(train: Train, stops: [Stop], boardingStation: Station, alightingCRS: String? = nil, boardStation: Station? = nil) {
         trackedTrain = train
         self.alightingCRS = alightingCRS
         trackedStops = personalStops(stops)
         self.boardingStation = boardingStation
+        self.boardStation = boardStation ?? boardingStation
         stopTimes = TrainTracker.parseStopTimes(trackedStops)
         lastPolled = Date()
         isTracking = true
@@ -90,6 +99,7 @@ final class TrainTracker {
         trackedTrain = nil
         trackedStops = []
         boardingStation = nil
+        boardStation = nil
         alightingCRS = nil
         stopTimes = []
         movements = []
@@ -113,6 +123,7 @@ final class TrainTracker {
             platform: train.platform, operatorName: train.operator,
             operatorCode: train.operatorCode,
             boardingCode: boardingStation.code, boardingName: boardingStation.name,
+            boardCode: boardStation?.code, boardName: boardStation?.name,
             alightingCRS: alightingCRS, savedAt: Date()
         )
         if let data = try? JSONEncoder().encode(snapshot) {
@@ -144,8 +155,15 @@ final class TrainTracker {
             rid: snapshot.rid, uid: snapshot.uid
         )
         let boarding = Station(code: snapshot.boardingCode, name: snapshot.boardingName)
+        let board: Station
+        if let code = snapshot.boardCode, let name = snapshot.boardName {
+            board = Station(code: code, name: name)
+        } else {
+            board = boarding
+        }
         trackedTrain = train
         boardingStation = boarding
+        boardStation = board
         alightingCRS = snapshot.alightingCRS
         lastPolled = Date()
         isTracking = true
@@ -508,7 +526,7 @@ final class TrainTracker {
         guard let train = trackedTrain else { return }
         guard let details = try? await APIClient.shared.getServiceDetails(
             serviceId: train.serviceId,
-            crs: boardingStation?.code
+            crs: (boardStation ?? boardingStation)?.code
         ) else { return }
 
         // Fetch TRUST movements before building stops so departed flags can
@@ -528,8 +546,11 @@ final class TrainTracker {
             updatedStops.append(Stop(from: cp, hasDeparted: TrainTracker.hasBeenPassed(cp)))
         }
 
-        // Boarding station, sitting between previous and subsequent.
-        if let boarding = boardingStation {
+        // The board station, sitting between previous and subsequent — the
+        // calling points are split around the station whose board produced
+        // the serviceId, which for a tracked ARRIVAL is the destination,
+        // not where the user boards.
+        if let board = boardStation ?? boardingStation {
             let isTerminus = details.subsequentCallingPoints.isEmpty
             let boardTime = isTerminus
                 ? (details.scheduledArrival ?? train.time)
@@ -540,11 +561,11 @@ final class TrainTracker {
             let boardDeparted = !isTerminus && TrainTracker.boardingDeparted(
                 details: details,
                 movements: movements,
-                boardingCRS: boarding.code
+                boardingCRS: board.code
             )
             updatedStops.append(Stop(
-                station: boarding.name,
-                crs: boarding.code,
+                station: board.name,
+                crs: board.code,
                 time: boardTime,
                 expectedTime: boardExpected,
                 platform: details.platform ?? train.platform,

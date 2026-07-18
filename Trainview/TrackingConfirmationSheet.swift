@@ -4,6 +4,8 @@ struct TrackingConfirmationSheet: View {
     let train: Train
     let stops: [Stop]
     let boardingStation: Station
+    /// Station whose board produced the serviceId (destination for arrivals).
+    let boardStation: Station
     let tracker: TrainTracker
     let accent: Color
     @Environment(\.dismiss) private var dismiss
@@ -105,7 +107,8 @@ struct TrackingConfirmationSheet: View {
                         train: train,
                         stops: stops,
                         boardingStation: boardingStation,
-                        alightingCRS: selectedAlighting?.crs
+                        alightingCRS: selectedAlighting?.crs,
+                        boardStation: boardStation
                     )
                     dismiss()
                 } label: {
@@ -158,7 +161,9 @@ struct TrackingConfirmationSheet: View {
 
             HStack(alignment: .center, spacing: 12) {
                 VStack(spacing: 2) {
-                    Text(train.time)
+                    // train.time is the arrival time for arrivals-board
+                    // trains — the boarding side shows the origin departure.
+                    Text(train.isArrival ? (stops.first?.time ?? train.time) : train.time)
                         .font(.mono(18, weight: .medium))
                     Text(boardingStation.name)
                         .font(.ui(12))

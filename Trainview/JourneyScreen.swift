@@ -71,7 +71,7 @@ struct JourneyScreen: View {
                         }
                         if needsAlternatives {
                             AlternativesSection(
-                                boardingStation: boardingStation,
+                                boardingStation: trackingBoardingStation,
                                 destinationCrs: destCrs.isEmpty ? train.destinationCrs : destCrs,
                                 destinationName: destName,
                                 excludedServiceId: train.serviceId,
@@ -127,6 +127,7 @@ struct JourneyScreen: View {
                 train: train,
                 stops: stops,
                 boardingStation: trackingBoardingStation,
+                boardStation: boardingStation,
                 tracker: tracker,
                 accent: accent
             )
@@ -402,9 +403,13 @@ struct JourneyScreen: View {
 
             stops = allStops
             stopTimes = JourneyScreen.parseStopTimes(allStops)
-            // The boarding station is the row appended after the previous
-            // calling points, so its index is exactly their count.
-            boardingIndex = min(response.previousCallingPoints.count, max(allStops.count - 1, 0))
+            // The board station is the row appended after the previous
+            // calling points, so its index is exactly their count. For an
+            // arrival that row IS the destination — the user's journey spans
+            // the whole route, so board from the first stop instead.
+            boardingIndex = train.isArrival
+                ? 0
+                : min(response.previousCallingPoints.count, max(allStops.count - 1, 0))
             let boardTime = allStops.indices.contains(boardingIndex) ? allStops[boardingIndex].time : ""
             let lastTime = allStops.last?.time ?? ""
             duration = computeDuration(from: boardTime, to: lastTime)
@@ -861,25 +866,28 @@ struct JourneyScreen: View {
     private var heroBody: some View {
         HStack(alignment: .bottom, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(train.time)
+                // Arrivals: the left side is the ORIGIN, so it gets the
+                // origin's departure time; train.time is the arrival at the
+                // destination and moves to the right column.
+                Text(train.isArrival ? (stops.first?.time ?? train.time) : train.time)
                     .font(.mono(14, weight: .medium))
                     .tracking(0.3)
                     .foregroundStyle(Theme.inkSoft)
-                // The user's boarding station — train.time and the platform
-                // are both relative to it, so the origin name would mislead
-                // anyone boarding mid-route. Opened from an arrivals board
-                // the board station IS the destination, so the left side
-                // shows where the service is coming from instead.
                 Text(train.isArrival ? train.origin : boardingStation.name)
                     .font(.display(22))
                     .tracking(-0.2)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Platform \(departPlatform)")
-                    .font(.mono(10, weight: .medium))
-                    .tracking(0.5)
-                    .textCase(.uppercase)
-                    .foregroundStyle(Theme.inkSoft)
+                // departPlatform is the platform at the queried board
+                // station — on arrivals that's the destination, shown on
+                // the right column instead.
+                if !train.isArrival {
+                    Text("Platform \(departPlatform)")
+                        .font(.mono(10, weight: .medium))
+                        .tracking(0.5)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.inkSoft)
+                }
                 if boardingIndex > 0 && !train.isArrival {
                     Text("Service from \(train.origin)")
                         .font(.mono(9))
@@ -919,7 +927,8 @@ struct JourneyScreen: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.trailing)
                     .fixedSize(horizontal: false, vertical: true)
-                if let lastPlat = stops.last?.platform, lastPlat != "—" {
+                if let lastPlat = train.isArrival ? departPlatform : stops.last?.platform,
+                   lastPlat != "—", !lastPlat.isEmpty {
                     Text("Platform \(lastPlat)")
                         .font(.mono(10, weight: .medium))
                         .tracking(0.5)
