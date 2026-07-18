@@ -387,25 +387,22 @@ struct RouteMapContent: MapContent {
     let split: RouteSplit
     let accent: Color
     let labelAll: Bool
-    /// When the tracked train is running late the route ahead turns amber,
-    /// so a glance at the map carries the delay.
+    /// When the tracked train is running late its travelled line turns
+    /// amber — the delay belongs to the train, so it rides the line the
+    /// train has drawn. The route ahead stays muted grey either way.
     let isDelayed: Bool
 
     var body: some MapContent {
-        // Route ahead: solid like the covered line, told apart by colour —
-        // muted grey ahead (amber when running late), accent behind the train.
+        // Route ahead: solid like the covered line, told apart by colour.
         if split.remaining.count >= 2 {
             MapPolyline(coordinates: split.remaining)
-                .stroke(
-                    isDelayed ? Theme.delayedText : Theme.inkMute.opacity(0.7),
-                    style: StrokeStyle(
-                        lineWidth: isDelayed ? 2.5 : 2, lineCap: .round, lineJoin: .round
-                    )
-                )
+                .stroke(Theme.inkMute.opacity(0.7), style: StrokeStyle(
+                    lineWidth: 2, lineCap: .round, lineJoin: .round
+                ))
         }
         if split.covered.count >= 2 {
             MapPolyline(coordinates: split.covered)
-                .stroke(accent, style: StrokeStyle(
+                .stroke(isDelayed ? Theme.delayedText : accent, style: StrokeStyle(
                     lineWidth: 3, lineCap: .round, lineJoin: .round
                 ))
         }
@@ -439,13 +436,13 @@ struct MapKeyChip: View {
     var body: some View {
         HStack(spacing: 10) {
             if showsCovered {
-                entry(colour: accent, label: "TRAVELLED")
+                if isDelayed {
+                    entry(colour: Theme.delayedText, label: "RUNNING LATE")
+                } else {
+                    entry(colour: accent, label: "TRAVELLED")
+                }
             }
-            if isDelayed {
-                entry(colour: Theme.delayedText, label: "RUNNING LATE")
-            } else {
-                entry(colour: Theme.inkMute.opacity(0.7), label: "AHEAD")
-            }
+            entry(colour: Theme.inkMute.opacity(0.7), label: "AHEAD")
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
