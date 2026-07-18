@@ -629,17 +629,48 @@ struct RouteMapFullScreen: View {
 private struct TrainMarker: View {
     let accent: Color
 
+    @State private var pulsing = false
+
     var body: some View {
         ZStack {
+            // Soft live pulse radiating from the badge.
             Circle()
-                .fill(accent)
-                .frame(width: 26, height: 26)
-                .overlay(Circle().stroke(Theme.ink, lineWidth: 1.5))
+                .fill(accent.opacity(0.35))
+                .frame(width: 30, height: 30)
+                .scaleEffect(pulsing ? 1.55 : 1.0)
+                .opacity(pulsing ? 0 : 0.7)
+                .animation(.easeOut(duration: 1.8).repeatForever(autoreverses: false), value: pulsing)
+
+            // Cream seat ring lifts the badge off the map tiles.
+            Circle()
+                .fill(Theme.cream)
+                .frame(width: 34, height: 34)
+                .shadow(color: .black.opacity(0.30), radius: 6, y: 3)
+
+            // Accent badge with a gentle top-light gradient and ink hairline.
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [accent.opacity(0.95), accent, accent.opacity(0.75)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
+                .frame(width: 28, height: 28)
+                .overlay(Circle().stroke(Theme.ink.opacity(0.9), lineWidth: 1.2))
+                .overlay(
+                    // Specular top edge, the detail that reads as "made".
+                    Circle()
+                        .trim(from: 0.55, to: 0.95)
+                        .stroke(.white.opacity(0.45), lineWidth: 1)
+                        .padding(2)
+                )
+
             Image(systemName: "train.side.front.car")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.ink)
+                .shadow(color: .white.opacity(0.3), radius: 0.5, y: 0.5)
         }
-        .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+        .onAppear { pulsing = true }
     }
 }
 
@@ -655,23 +686,49 @@ private struct StationMarker: View {
 
     var body: some View {
         VStack(spacing: 3) {
-            ZStack {
-                Circle()
-                    .fill(isEndpoint ? accent : (isPassed ? accent : Theme.cream))
-                    .frame(width: isEndpoint ? 14 : 10, height: isEndpoint ? 14 : 10)
-                    .overlay(
-                        Circle()
-                            .stroke(
-                                isEndpoint || isPassed ? Theme.ink : Theme.inkMute,
-                                lineWidth: isEndpoint ? 2 : 1.5
-                            )
-                    )
-                if isEndpoint {
-                    Circle()
-                        .fill(Theme.ink)
-                        .frame(width: 5, height: 5)
-                }
+            if isEndpoint {
+                endpointBadge
+            } else {
+                intermediateDot
             }
+        }
+    }
+
+    /// Origin: accent ring with an ink core — "where you got on".
+    /// Destination: ink ring with an accent core — a target to arrive at.
+    private var endpointBadge: some View {
+        ZStack {
+            Circle()
+                .fill(Theme.cream)
+                .frame(width: 20, height: 20)
+                .shadow(color: .black.opacity(0.22), radius: 3.5, y: 1.5)
+            Circle()
+                .stroke(type == .destination ? Theme.ink : accent, lineWidth: 3.5)
+                .frame(width: 14.5, height: 14.5)
+            Circle()
+                .fill(type == .destination ? accent : Theme.ink)
+                .frame(width: 6, height: 6)
+        }
+        .overlay(
+            Circle()
+                .stroke(Theme.ink.opacity(0.35), lineWidth: 0.8)
+                .frame(width: 20, height: 20)
+        )
+    }
+
+    private var intermediateDot: some View {
+        ZStack {
+            Circle()
+                .fill(Theme.cream)
+                .frame(width: 11, height: 11)
+                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+            Circle()
+                .fill(isPassed ? accent : Theme.cream)
+                .frame(width: 8, height: 8)
+                .overlay(
+                    Circle()
+                        .stroke(isPassed ? Theme.ink : Theme.inkMute, lineWidth: 1.3)
+                )
         }
     }
 }
