@@ -617,7 +617,8 @@ struct HomeScreen: View {
                     .foregroundStyle(Theme.inkMute)
             }
             VStack(spacing: 0) {
-                ForEach(Array(journeysStore.journeys.enumerated()), id: \.element.id) { index, journey in
+                let display = journeysStore.displayJourneys
+                ForEach(Array(display.enumerated()), id: \.element.id) { index, journey in
                     Button {
                         onPickJourney(journey)
                     } label: {
@@ -631,11 +632,18 @@ struct HomeScreen: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
 
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("To \(journey.destination.name)")
-                                    .font(.display(18))
-                                    .tracking(-0.1)
-                                    .foregroundStyle(Theme.ink)
-                                    .lineLimit(1)
+                                HStack(spacing: 5) {
+                                    Text("To \(journey.destination.name)")
+                                        .font(.display(18))
+                                        .tracking(-0.1)
+                                        .foregroundStyle(Theme.ink)
+                                        .lineLimit(1)
+                                    if journeysStore.isPinned(journey) {
+                                        Image(systemName: "star.fill")
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(Theme.inkSoft)
+                                    }
+                                }
                                 Text("from \(journey.origin.name)")
                                     .font(.ui(11))
                                     .foregroundStyle(Theme.inkMute)
@@ -653,6 +661,15 @@ struct HomeScreen: View {
                     }
                     .buttonStyle(.plain)
                     .contextMenu {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                journeysStore.togglePin(journey)
+                            }
+                        } label: {
+                            journeysStore.isPinned(journey)
+                                ? Label("Unpin journey", systemImage: "star.slash")
+                                : Label("Save journey", systemImage: "star")
+                        }
                         Button(role: .destructive) {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 journeysStore.remove(journey)
@@ -662,7 +679,7 @@ struct HomeScreen: View {
                         }
                     }
                     .overlay(alignment: .bottom) {
-                        if index < journeysStore.journeys.count - 1 {
+                        if index < display.count - 1 {
                             Divider().overlay(Theme.line)
                         }
                     }

@@ -139,6 +139,10 @@ struct ContentView: View {
             onPickJourney: { journey in
                 activeStation = journey.origin
                 pendingJourneyFilter = journey.destination
+                // A saved journey is always origin→destination; without this
+                // a board left in arrivals mode would reopen arrivals and
+                // read the seeded filter backwards ("From <destination>").
+                boardMode = .departures
                 withAnimation(.easeInOut(duration: 0.25)) {
                     screen = .departures
                 }

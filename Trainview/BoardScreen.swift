@@ -36,8 +36,9 @@ struct BoardScreen: View {
     @State private var callingPoints: [String: [CallingPointResponse]] = [:]
     @State private var serverFilterConfirmed = false
     @State private var callingPointsTasks: [Task<Void, Never>] = []
-    @State private var showSearch = false
     @State private var showFAQ = false
+    @State private var searchText = ""
+    @FocusState private var searchFocused: Bool
     @State private var filterDestination: Station?
     @State private var timeOffset: Int = 0
     @State private var homeStore = HomeStationsStore.shared
@@ -76,6 +77,22 @@ struct BoardScreen: View {
             result = result.filter { train in
                 train.destinationCrs == dest.code
                     || (callingPoints[train.serviceId]?.contains { $0.crs == dest.code } ?? false)
+            }
+        }
+        // Live search: while the user types (no locked filter yet), narrow
+        // the board to trains whose headline station, CRS code, or known
+        // calling points match the text. Purely client-side, updates on
+        // every keystroke.
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        if filterDestination == nil, !query.isEmpty {
+            result = result.filter { train in
+                let headline = isArrival ? train.origin : train.destination
+                if headline.localizedCaseInsensitiveContains(query) { return true }
+                if train.destinationCrs.caseInsensitiveCompare(query) == .orderedSame { return true }
+                return callingPoints[train.serviceId]?.contains {
+                    $0.station.localizedCaseInsensitiveContains(query)
+                        || $0.crs.caseInsensitiveCompare(query) == .orderedSame
+                } ?? false
             }
         }
         return result
@@ -131,9 +148,7 @@ struct BoardScreen: View {
                     } else if !isArrival && !hideFastestHint {
                         fastestHintCard
                     }
-                    if filterDestination != nil {
-                        destinationBanner
-                    }
+                    destinationSearchBar
                     filterRow
                     resultsRow
                     trainList
@@ -141,6 +156,7 @@ struct BoardScreen: View {
             }
         }
         .background(Theme.cream)
+        .scrollDismissesKeyboard(.immediately)
         .refreshable {
             await loadBoard()
         }
@@ -181,13 +197,6 @@ struct BoardScreen: View {
         }
         .onChange(of: mode) { _, _ in
             Task { await loadBoard() }
-        }
-        .sheet(isPresented: $showSearch) {
-            StationSearchSheet(currentStation: station.code) { selected in
-                filterDestination = selected
-                journeysStore.add(origin: station, destination: selected)
-                Task { await loadBoard() }
-            }
         }
         .sheet(isPresented: $showFAQ) {
             FAQSheet()
@@ -342,18 +351,7 @@ struct BoardScreen: View {
 
             Spacer()
 
-            HStack(spacing: 6) {
-                ZStack(alignment: .topTrailing) {
-                    IconButton(systemName: "line.3.horizontal.decrease", size: 14) { showSearch = true }
-                    if filterDestination != nil {
-                        Circle()
-                            .fill(Color(hex: 0xC94A2E))
-                            .frame(width: 7, height: 7)
-                            .offset(x: -4, y: 4)
-                    }
-                }
-                IconButton(systemName: "info.circle", size: 14) { showFAQ = true }
-            }
+            IconButton(systemName: "info.circle", size: 14) { showFAQ = true }
         }
         .padding(.vertical, 6)
         .padding(.bottom, 10)
@@ -558,17 +556,153 @@ struct BoardScreen: View {
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // MARK: - Destination Banner
+    // MARK: - Destination Search Bar
 
-    private var destinationBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "line.3.horizontal.decrease.circle.fill")
+    /// The journey the active filter represents, direction-corrected for the
+    /// board mode: on arrivals the filtered station is where the train came
+    /// FROM, so it is the journey's origin, not its destination.
+    private var filteredJourney: RecentJourney? {
+        guard let dest = filterDestination else { return nil }
+        return isArrival
+            ? RecentJourney(origin: dest, destination: station)
+            : RecentJourney(origin: station, destination: dest)
+    }
+
+    /// The single station the typed text resolves to among trains actually
+    /// on this board (headline stations and known calling points). Nil while
+    /// the text is ambiguous or matches nothing, so the save star only
+    /// appears once the search means one specific place the board serves.
+    private var liveSearchMatch: Station? {
+        guard filterDestination == nil else { return nil }
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return nil }
+        var matches: [String: String] = [:]
+        for train in services {
+            if isArrival {
+                if !train.originCrs.isEmpty,
+                   train.origin.localizedCaseInsensitiveContains(query)
+                    || train.originCrs.caseInsensitiveCompare(query) == .orderedSame {
+                    matches[train.originCrs] = train.origin
+                }
+            } else if train.destination.localizedCaseInsensitiveContains(query)
+                        || train.destinationCrs.caseInsensitiveCompare(query) == .orderedSame {
+                matches[train.destinationCrs] = train.destination
+            }
+            for point in callingPoints[train.serviceId] ?? []
+            where point.station.localizedCaseInsensitiveContains(query)
+                || point.crs.caseInsensitiveCompare(query) == .orderedSame {
+                matches[point.crs] = point.station
+            }
+        }
+        matches.removeValue(forKey: station.code)
+        guard matches.count == 1, let match = matches.first else { return nil }
+        return Station(code: match.key, name: match.value)
+    }
+
+    /// Journey for the unambiguous live match, direction-corrected the same
+    /// way as `filteredJourney`.
+    private var liveSearchJourney: RecentJourney? {
+        guard let match = liveSearchMatch else { return nil }
+        return isArrival
+            ? RecentJourney(origin: match, destination: station)
+            : RecentJourney(origin: station, destination: match)
+    }
+
+    /// Always-visible entry point for the destination filter, replacing the
+    /// old funnel icon in the top bar. Idle it's a live search field that
+    /// narrows the board's trains as the user types — no station lookup, it
+    /// only ever matches what's on the board. A board opened from a saved
+    /// journey shows the locked filter banner with save + clear instead.
+    private var destinationSearchBar: some View {
+        Group {
+            if filterDestination != nil {
+                activeFilterBar
+            } else {
+                searchField
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.inkMute)
+            TextField(isArrival ? "Coming from..." : "Going to...", text: $searchText)
+                .font(.ui(15))
+                .focused($searchFocused)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.words)
+                .submitLabel(.done)
+            if let journey = liveSearchJourney {
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        journeysStore.togglePin(journey)
+                    }
+                } label: {
+                    Image(systemName: journeysStore.isPinned(journey) ? "star.fill" : "star")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(journeysStore.isPinned(journey) ? Theme.ink : Theme.inkMute)
+                        .frame(width: 24, height: 24)
+                        .background(journeysStore.isPinned(journey) ? accent : Theme.ink.opacity(0.08))
+                        .clipShape(Circle())
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
+            if !searchText.isEmpty {
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        searchText = ""
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Theme.inkMute)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(searchFocused ? Theme.ink.opacity(0.3) : Theme.line, lineWidth: 1)
+        )
+        // Tapping anywhere on the field focuses it, not just the text.
+        .contentShape(Rectangle())
+        .onTapGesture { searchFocused = true }
+        .animation(.easeOut(duration: 0.2), value: liveSearchJourney?.id)
+    }
+
+    private var activeFilterBar: some View {
+        let journey = filteredJourney
+        let isPinned = journey.map { journeysStore.isPinned($0) } ?? false
+
+        return HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
                 .font(.system(size: 13))
                 .foregroundStyle(accent)
-            Text("Calling at \(Text(filterDestination?.name ?? "").font(.ui(12, weight: .semibold)).foregroundStyle(Theme.ink))")
+            Text("\(isArrival ? "From" : "Calling at") \(Text(filterDestination?.name ?? "").font(.ui(12, weight: .semibold)).foregroundStyle(Theme.ink))")
                 .font(.ui(12))
                 .foregroundStyle(Theme.inkSoft)
+                .lineLimit(1)
             Spacer()
+            Button {
+                guard let journey else { return }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    journeysStore.togglePin(journey)
+                }
+            } label: {
+                Image(systemName: isPinned ? "star.fill" : "star")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isPinned ? Theme.ink : Theme.inkMute)
+                    .frame(width: 24, height: 24)
+                    .background(isPinned ? accent : Theme.ink.opacity(0.08))
+                    .clipShape(Circle())
+            }
             Button {
                 withAnimation(.easeOut(duration: 0.25)) {
                     filterDestination = nil
@@ -586,9 +720,7 @@ struct BoardScreen: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(accent.opacity(0.15))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 18)
-        .padding(.top, 12)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
@@ -885,6 +1017,21 @@ struct BoardScreen: View {
             } else {
                 if timeOffset > -120 {
                     earlierTrainsButton
+                }
+                // Live search matched nothing on this board.
+                let liveQuery = searchText.trimmingCharacters(in: .whitespaces)
+                if filtered.isEmpty, filterDestination == nil, !liveQuery.isEmpty {
+                    VStack(spacing: 4) {
+                        Text("No matching trains")
+                            .font(.display(18))
+                        Text("Nothing on this board \(isArrival ? "arrives from" : "calls at") \u{201C}\(liveQuery)\u{201D}")
+                            .font(.ui(11))
+                            .foregroundStyle(Theme.inkMute)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 28)
+                    .background(Theme.card)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
                 // Client-side filtering can empty a non-empty board (server
                 // filter unconfirmed); give that the same transfer fallback
