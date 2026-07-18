@@ -15,6 +15,7 @@ struct JourneyMapSection: View {
     private var hasEnoughPins: Bool { stationPins.count >= 2 }
 
     private var isTrackingThis: Bool { tracker.isTrackingService(serviceId) }
+    private var isDelayed: Bool { isTrackingThis && tracker.trainStatus == .delayed }
 
     private var region: MKCoordinateRegion {
         guard hasEnoughPins else {
@@ -92,7 +93,8 @@ struct JourneyMapSection: View {
                     stationPins: stationPins,
                     split: split,
                     accent: accent,
-                    labelAll: false
+                    labelAll: false,
+                    isDelayed: isDelayed
                 )
             }
         }
@@ -139,6 +141,14 @@ struct JourneyMapSection: View {
                     .background(.ultraThinMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
+            .padding(10)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            MapKeyChip(
+                accent: accent,
+                isDelayed: isDelayed,
+                showsCovered: (split?.covered.count ?? 0) >= 2
+            )
             .padding(10)
         }
         .frame(height: 280)
@@ -377,15 +387,21 @@ struct RouteMapContent: MapContent {
     let split: RouteSplit
     let accent: Color
     let labelAll: Bool
+    /// When the tracked train is running late the route ahead turns amber,
+    /// so a glance at the map carries the delay.
+    let isDelayed: Bool
 
     var body: some MapContent {
         // Route ahead: solid like the covered line, told apart by colour —
-        // muted grey ahead, accent behind the train.
+        // muted grey ahead (amber when running late), accent behind the train.
         if split.remaining.count >= 2 {
             MapPolyline(coordinates: split.remaining)
-                .stroke(Theme.inkMute.opacity(0.7), style: StrokeStyle(
-                    lineWidth: 2, lineCap: .round, lineJoin: .round
-                ))
+                .stroke(
+                    isDelayed ? Theme.delayedText : Theme.inkMute.opacity(0.7),
+                    style: StrokeStyle(
+                        lineWidth: isDelayed ? 2.5 : 2, lineCap: .round, lineJoin: .round
+                    )
+                )
         }
         if split.covered.count >= 2 {
             MapPolyline(coordinates: split.covered)
@@ -414,6 +430,42 @@ struct RouteMapContent: MapContent {
     }
 }
 
+/// Colour key for the route lines, overlaid on both map presentations.
+struct MapKeyChip: View {
+    let accent: Color
+    let isDelayed: Bool
+    let showsCovered: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if showsCovered {
+                entry(colour: accent, label: "TRAVELLED")
+            }
+            if isDelayed {
+                entry(colour: Theme.delayedText, label: "RUNNING LATE")
+            } else {
+                entry(colour: Theme.inkMute.opacity(0.7), label: "AHEAD")
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+    }
+
+    private func entry(colour: Color, label: String) -> some View {
+        HStack(spacing: 4) {
+            Capsule()
+                .fill(colour)
+                .frame(width: 14, height: 3)
+            Text(label)
+                .font(.mono(8, weight: .semibold))
+                .tracking(0.8)
+                .foregroundStyle(Theme.ink)
+        }
+    }
+}
+
 // MARK: - Full Screen
 
 struct RouteMapFullScreen: View {
@@ -431,6 +483,7 @@ struct RouteMapFullScreen: View {
     @State private var split: RouteSplit?
 
     private var isTrackingThis: Bool { tracker.isTrackingService(serviceId) }
+    private var isDelayed: Bool { isTrackingThis && tracker.trainStatus == .delayed }
 
     /// Camera altitude while following — close enough to see the train move,
     /// wide enough to keep the next station in frame on most legs.
@@ -451,9 +504,19 @@ struct RouteMapFullScreen: View {
                         stationPins: stationPins,
                         split: split,
                         accent: accent,
-                        labelAll: true
+                        labelAll: true,
+                        isDelayed: isDelayed
                     )
                 }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                MapKeyChip(
+                    accent: accent,
+                    isDelayed: isDelayed,
+                    showsCovered: (split?.covered.count ?? 0) >= 2
+                )
+                .padding(.trailing, 12)
+                .padding(.bottom, 24)
             }
             .mapStyle(.standard(pointsOfInterest: .excludingAll, showsTraffic: false))
             // Marker and follow-camera share one 1-second linear animation
