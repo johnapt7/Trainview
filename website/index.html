@@ -23,7 +23,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=ios-redesign" />
     <script src="config.js"></script>
     <script src="app.js" defer></script>
   </head>
@@ -224,27 +224,100 @@
 
       <section class="app-pitch" id="in-your-pocket" aria-labelledby="app-title">
         <div class="app-pitch__inner shell">
-          <div class="app-icon" aria-hidden="true">
-            <svg viewBox="0 0 120 120" fill="none">
-              <path d="M8 70c25 0 27-39 51-39h50M59 31v45c0 16-14 26-38 26" />
-              <path class="app-icon__accent" d="M19 18h26c14 0 17 44 45 44h22" />
-              <circle cx="8" cy="70" r="5" /><circle cx="59" cy="31" r="5" />
-              <circle cx="59" cy="62" r="5" /><circle cx="109" cy="31" r="5" />
-              <circle cx="21" cy="102" r="5" /><circle cx="90" cy="62" r="5" />
-            </svg>
-          </div>
-
           <div class="app-pitch__copy">
             <p class="section-label">Trainview for iPhone</p>
             <h2 id="app-title">Take the board<br />with you.</h2>
             <p>Save your stations, track a journey and get the platform change before the crowd moves.</p>
+
+            <ul class="app-pitch__features" aria-label="App features">
+              <li><span aria-hidden="true"></span>Live platforms</li>
+              <li><span aria-hidden="true"></span>Journey tracking</li>
+              <li><span aria-hidden="true"></span>No adverts</li>
+            </ul>
+
+            <a class="app-button app-link" href="#" rel="noopener">
+              <span class="app-button__icon" aria-hidden="true">●</span>
+              <span><small>Available on the</small>App Store</span>
+              <span class="app-button__arrow" aria-hidden="true">↗</span>
+            </a>
           </div>
 
-          <a class="app-button app-link" href="#" rel="noopener">
-            <span class="app-button__icon" aria-hidden="true">●</span>
-            <span><small>Available on the</small>App Store</span>
-            <span class="app-button__arrow" aria-hidden="true">↗</span>
-          </a>
+          <div class="phone-stage" aria-label="Preview of the redesigned Trainview iPhone app">
+            <div class="phone-glow" aria-hidden="true"></div>
+            <div class="phone">
+              <div class="phone__screen">
+                <div class="phone__status" aria-hidden="true">
+                  <time>9:41</time>
+                  <span class="phone__island"></span>
+                  <span class="phone__signals">● ◒ ▰</span>
+                </div>
+
+                <div class="phone__content">
+                  <header class="phone__header">
+                    <span class="phone__avatar" aria-hidden="true">JT</span>
+                    <span class="phone__brand">Trainview</span>
+                    <span class="phone__alert" aria-hidden="true">!</span>
+                  </header>
+
+                  <div class="phone__intro">
+                    <p>Good afternoon</p>
+                    <h3>Where are you<br />travelling?</h3>
+                  </div>
+
+                  <div class="phone__planner" aria-label="Journey search preview">
+                    <div class="phone__planner-row">
+                      <span class="phone__route-dot phone__route-dot--from" aria-hidden="true"></span>
+                      <span class="phone__planner-label">From</span>
+                      <strong>London Waterloo</strong>
+                      <span class="phone__code">WAT</span>
+                    </div>
+                    <div class="phone__planner-line" aria-hidden="true"></div>
+                    <div class="phone__planner-row phone__planner-row--muted">
+                      <span class="phone__route-dot" aria-hidden="true"></span>
+                      <span class="phone__planner-label">To</span>
+                      <strong>Add destination</strong>
+                      <span class="phone__arrow" aria-hidden="true">→</span>
+                    </div>
+                  </div>
+
+                  <div class="phone__board-heading">
+                    <div>
+                      <p>Next from</p>
+                      <h4>Waterloo</h4>
+                    </div>
+                    <span class="phone__live"><i aria-hidden="true"></i>Live</span>
+                  </div>
+
+                  <div class="phone__services">
+                    <article class="phone__service">
+                      <div class="phone__time"><strong>14:12</strong><span>On time</span></div>
+                      <div class="phone__destination"><strong>Guildford</strong><span>via Woking</span></div>
+                      <div class="phone__platform"><span>Plat</span><strong>5</strong></div>
+                    </article>
+                    <article class="phone__service phone__service--warn">
+                      <div class="phone__time"><strong>14:15</strong><span>14:19</span></div>
+                      <div class="phone__destination"><strong>Portsmouth Harbour</strong><span>via Haslemere</span></div>
+                      <div class="phone__platform"><span>Plat</span><strong>10</strong></div>
+                    </article>
+                    <article class="phone__service">
+                      <div class="phone__time"><strong>14:20</strong><span>On time</span></div>
+                      <div class="phone__destination"><strong>Weymouth</strong><span>via Southampton</span></div>
+                      <div class="phone__platform"><span>Plat</span><strong>8</strong></div>
+                    </article>
+                  </div>
+                </div>
+
+                <nav class="phone__tabs" aria-label="App preview navigation">
+                  <span class="is-current"><i aria-hidden="true">⌂</i>Home</span>
+                  <span><i aria-hidden="true">⌁</i>Boards</span>
+                  <span><i aria-hidden="true">☆</i>Saved</span>
+                </nav>
+                <span class="phone__home-indicator" aria-hidden="true"></span>
+              </div>
+            </div>
+            <div class="phone-note phone-note--platform" aria-hidden="true"><span>05</span>Platform first</div>
+            <div class="phone-note phone-note--live" aria-hidden="true"><i></i>Updated live</div>
+          </div>
         </div>
       </section>
     </main>
