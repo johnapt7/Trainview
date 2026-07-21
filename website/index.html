@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f0ead8" />
+    <meta
+      name="description"
+      content="A clear, live view of departures and arrivals across the British rail network."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Trainview — Live trains, clearly" />
+    <meta property="og:description" content="Platforms, delays and every stop along the way—presented clearly, updated live." />
+    <meta property="og:image" content="/og.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Trainview — Live trains, clearly" />
+    <meta name="twitter:description" content="Platforms, delays and every stop along the way—presented clearly, updated live." />
+    <meta name="twitter:image" content="/og.jpg" />
+    <title>Trainview — Live trains, clearly</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="config.js"></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#live-board">Skip to the live board</a>
+
+    <div class="route-map route-map--top" aria-hidden="true">
+      <svg viewBox="0 0 920 560" fill="none">
+        <path d="M-40 436C130 436 184 130 379 130H625C720 130 757 48 968 48" />
+        <path class="route-map__accent" d="M56 88H220C310 88 345 293 474 293H974" />
+        <path d="M379 130V410C379 473 315 500 190 500" />
+        <circle cx="379" cy="130" r="10" />
+        <circle cx="379" cy="293" r="10" />
+        <circle cx="625" cy="130" r="10" />
+        <circle cx="220" cy="88" r="10" />
+        <circle cx="474" cy="293" r="10" />
+      </svg>
+    </div>
+
+    <header class="site-header shell">
+      <a class="brand" href="#top" aria-label="Trainview home">
+        <svg class="brand__mark" viewBox="0 0 44 44" aria-hidden="true">
+          <path d="M5 31C13 31 14 13 25 13h14M25 13v19H14" />
+          <circle cx="5" cy="31" r="3.5" />
+          <circle cx="25" cy="13" r="3.5" />
+          <circle cx="25" cy="31" r="3.5" />
+          <circle cx="39" cy="13" r="3.5" />
+        </svg>
+        <span>Trainview</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="#live-board">Live board</a>
+        <a href="#in-your-pocket">The app</a>
+        <a class="nav-cta app-link" href="#" rel="noopener">Open app <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero shell" aria-labelledby="hero-title">
+        <div class="hero__eyebrow reveal">
+          <span class="live-pulse" aria-hidden="true"></span>
+          Live across the British rail network
+        </div>
+        <h1 id="hero-title" class="reveal reveal--1">
+          Your train.<br />
+          <span>Nothing in the way.</span>
+        </h1>
+        <div class="hero__foot reveal reveal--2">
+          <p>
+            Platforms, delays and every stop along the way—presented clearly,
+            updated live.
+          </p>
+          <a class="text-link" href="#live-board">Check a station <span aria-hidden="true">↓</span></a>
+        </div>
+      </section>
+
+      <section class="board-section shell" id="live-board" aria-labelledby="board-title">
+        <div class="board" data-state="loading">
+          <div class="board__chrome">
+            <div class="station-picker">
+              <label for="station-search">Station</label>
+              <div class="station-picker__control">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="11" cy="11" r="6.5" />
+                  <path d="m16 16 4 4" />
+                </svg>
+                <input
+                  id="station-search"
+                  name="station"
+                  type="search"
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-autocomplete="list"
+                  aria-controls="station-results"
+                  placeholder="Search any station"
+                />
+                <span class="station-picker__code" id="station-code">KGX</span>
+                <button class="save-station" id="save-station" type="button" aria-label="Save this station" aria-pressed="false" title="Save station">☆</button>
+              </div>
+              <div class="station-results" id="station-results" role="listbox" hidden></div>
+            </div>
+
+            <div class="mode-switch" aria-label="Board type">
+              <button type="button" class="is-active" data-mode="departures" aria-pressed="true">Departures</button>
+              <button type="button" data-mode="arrivals" aria-pressed="false">Arrivals</button>
+            </div>
+          </div>
+
+          <div class="saved-strip" id="saved-stations" aria-label="Saved stations" hidden></div>
+
+          <div class="board__command-bar">
+            <div class="journey-picker">
+              <label for="journey-search" id="journey-label">Going to</label>
+              <div class="journey-picker__control">
+                <span class="journey-picker__direction" id="journey-direction" aria-hidden="true">TO</span>
+                <input
+                  id="journey-search"
+                  name="journey"
+                  type="search"
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-autocomplete="list"
+                  aria-controls="journey-results"
+                  placeholder="Filter by destination"
+                />
+                <button class="clear-journey" id="clear-journey" type="button" aria-label="Clear destination filter" hidden>×</button>
+              </div>
+              <div class="station-results journey-results" id="journey-results" role="listbox" hidden></div>
+            </div>
+
+            <div class="filter-group" aria-label="Filter services">
+              <button class="filter-chip is-active" type="button" data-filter="all" aria-pressed="true">All</button>
+              <button class="filter-chip" type="button" data-filter="on-time" aria-pressed="false">On time</button>
+              <button class="filter-chip" type="button" data-filter="intercity" aria-pressed="false">Intercity</button>
+            </div>
+
+            <div class="time-control" aria-label="Board time">
+              <button type="button" data-time-step="-30" aria-label="Show 30 minutes earlier">−</button>
+              <button class="time-control__now" id="time-offset" type="button" data-time-reset>Now</button>
+              <button type="button" data-time-step="30" aria-label="Show 30 minutes later">+</button>
+            </div>
+          </div>
+
+          <div class="board__header">
+            <div>
+              <p class="board__kicker" id="board-kicker">Departing from</p>
+              <h2 id="board-title">London King's Cross</h2>
+              <div class="board__tally" id="board-tally" aria-live="polite">
+                <span><i class="tally-dot tally-dot--good"></i><strong id="tally-on-time">0</strong> on time</span>
+                <span><i class="tally-dot tally-dot--warn"></i><strong id="tally-delayed">0</strong> delayed</span>
+                <span><i class="tally-dot tally-dot--bad"></i><strong id="tally-cancelled">0</strong> cancelled</span>
+              </div>
+            </div>
+            <div class="board__status" aria-live="polite">
+              <span class="live-pulse live-pulse--light" aria-hidden="true"></span>
+              <span id="board-status">Live</span>
+              <time id="board-time">--:--</time>
+            </div>
+          </div>
+
+          <div class="disruption-banner" id="disruption-banner" hidden>
+            <button type="button" id="disruption-toggle" aria-expanded="false">
+              <span aria-hidden="true">!</span>
+              <strong id="disruption-title">Service update</strong>
+              <small id="disruption-summary"></small>
+              <b aria-hidden="true">⌄</b>
+            </button>
+            <div class="disruption-banner__details" id="disruption-details" hidden></div>
+          </div>
+
+          <div class="board__labels" aria-hidden="true">
+            <span>Due</span>
+            <span>Destination</span>
+            <span>Platform</span>
+            <span>Status</span>
+          </div>
+
+          <div class="service-list" id="service-list" aria-live="polite" aria-busy="true">
+            <div class="service-row skeleton"><span></span><span></span><span></span><span></span></div>
+            <div class="service-row skeleton"><span></span><span></span><span></span><span></span></div>
+            <div class="service-row skeleton"><span></span><span></span><span></span><span></span></div>
+            <div class="service-row skeleton"><span></span><span></span><span></span><span></span></div>
+            <div class="service-row skeleton"><span></span><span></span><span></span><span></span></div>
+          </div>
+
+          <div class="board__footer">
+            <p id="board-note">Live running information refreshes automatically.</p>
+            <button class="refresh-button" id="refresh-board" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 8.2a7 7 0 0 1 11.7-1.5L20 9M4 15l2.2 2.3a7 7 0 0 0 11.7-1.5" /></svg>
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <noscript>
+          <p class="noscript">JavaScript is required to load live departure information.</p>
+        </noscript>
+      </section>
+
+      <section class="proof shell" aria-label="Trainview benefits">
+        <article>
+          <span>01</span>
+          <h3>Every platform</h3>
+          <p>Live assignments and changes, without digging through a journey planner.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>Every calling point</h3>
+          <p>Open any service for the full route and the latest running information.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>Only what matters</h3>
+          <p>No adverts, clutter or manufactured urgency. Just a better view of the railway.</p>
+        </article>
+      </section>
+
+      <section class="app-pitch" id="in-your-pocket" aria-labelledby="app-title">
+        <div class="app-pitch__inner shell">
+          <div class="app-icon" aria-hidden="true">
+            <svg viewBox="0 0 120 120" fill="none">
+              <path d="M8 70c25 0 27-39 51-39h50M59 31v45c0 16-14 26-38 26" />
+              <path class="app-icon__accent" d="M19 18h26c14 0 17 44 45 44h22" />
+              <circle cx="8" cy="70" r="5" /><circle cx="59" cy="31" r="5" />
+              <circle cx="59" cy="62" r="5" /><circle cx="109" cy="31" r="5" />
+              <circle cx="21" cy="102" r="5" /><circle cx="90" cy="62" r="5" />
+            </svg>
+          </div>
+
+          <div class="app-pitch__copy">
+            <p class="section-label">Trainview for iPhone</p>
+            <h2 id="app-title">Take the board<br />with you.</h2>
+            <p>Save your stations, track a journey and get the platform change before the crowd moves.</p>
+          </div>
+
+          <a class="app-button app-link" href="#" rel="noopener">
+            <span class="app-button__icon" aria-hidden="true">●</span>
+            <span><small>Available on the</small>App Store</span>
+            <span class="app-button__arrow" aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer shell">
+      <div class="brand brand--small">
+        <svg class="brand__mark" viewBox="0 0 44 44" aria-hidden="true">
+          <path d="M5 31C13 31 14 13 25 13h14M25 13v19H14" />
+          <circle cx="5" cy="31" r="3.5" /><circle cx="25" cy="13" r="3.5" />
+          <circle cx="25" cy="31" r="3.5" /><circle cx="39" cy="13" r="3.5" />
+        </svg>
+        <span>Trainview</span>
+      </div>
+      <p>Live trains, clearly.</p>
+      <p>Rail data remains subject to change.</p>
+    </footer>
+  </body>
+</html>
