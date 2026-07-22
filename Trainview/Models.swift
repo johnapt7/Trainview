@@ -77,8 +77,11 @@ struct Train: Identifiable {
     let destinationCrs: String
     let origin: String
     let via: String
-    let platform: String
-    let isPredictedPlatform: Bool
+    // Mutable: the tracker writes platform changes back onto the tracked
+    // train mid-journey so every surface reflects the move, not the platform
+    // known when the screen (or tracking) started.
+    var platform: String
+    var isPredictedPlatform: Bool
     let `operator`: String
     let operatorCode: String
     let status: TrainStatus

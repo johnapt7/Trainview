@@ -633,6 +633,17 @@ final class TrainTracker {
             hasDepartedBoardingStation: boardingHasDeparted
         )
 
+        // Write the fresh platform back onto the observable train BEFORE the
+        // Live Activity update reads it — otherwise the lock screen and the
+        // journey hero keep the platform from when tracking started even as
+        // the platform-change notification announces the move.
+        if let platformToReport, var live = trackedTrain,
+           live.platform != platformToReport || live.isPredictedPlatform != isPredicted {
+            live.platform = platformToReport
+            live.isPredictedPlatform = isPredicted
+            trackedTrain = live
+        }
+
         recalculatePosition()
         updateLiveActivity()
 

@@ -39,7 +39,19 @@ struct JourneyScreen: View {
     private var destName: String { details?.destination?.name ?? train.destination }
     private var originCrs: String { details?.origin?.crs ?? "" }
     private var destCrs: String { details?.destination?.crs ?? "" }
-    private var departPlatform: String { details?.platform ?? train.platform }
+    /// While tracking a departure, the tracker's poll (faster than this
+    /// screen's own refresh) is the source of truth for the boarding
+    /// platform — the moment a platform-change notification fires, the hero
+    /// shows the new platform too. Arrivals show the platform at the
+    /// destination board, which the tracker (polling from the origin)
+    /// doesn't carry, so they stay on the refreshed snapshot.
+    private var departPlatform: String {
+        if !train.isArrival, isTrackingThis,
+           let live = tracker.trackedTrain?.platform, !live.isEmpty, live != "—" {
+            return live
+        }
+        return details?.platform ?? train.platform
+    }
 
     private var heroBg: Color {
         switch train.status {
@@ -108,16 +120,22 @@ struct JourneyScreen: View {
         .task {
             await loadDetails()
         }
-        // Untracked journeys were a one-shot snapshot — stop states never
-        // updated after departure. Silent refresh keeps them live; when the
-        // tracker owns this service its own poll loop covers the stops, so
-        // skip the fetch (the tracker's cadence is faster anyway).
+        // The details snapshot feeds the hero (platforms, times) even while
+        // tracking — the tracker only covers the stops list — so the silent
+        // refresh always runs. Foregrounding refreshes immediately: tapping
+        // a platform-change notification must land on the new platform, not
+        // wait out the timer. The initial load (isLoading) is skipped.
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
+            var immediate = true
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(45))
+                if immediate {
+                    immediate = false
+                } else {
+                    try? await Task.sleep(for: .seconds(45))
+                }
                 guard !Task.isCancelled else { break }
-                if !isTrackingThis && !isLoading && loadError == nil {
+                if !isLoading && loadError == nil {
                     await loadDetails(silent: true)
                 }
             }
