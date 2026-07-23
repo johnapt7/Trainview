@@ -207,6 +207,42 @@ final class TrainNotificationManager {
         }
     }
 
+    /// Advances the comparison baseline without emitting — used while the
+    /// backend authors these alerts over APNs, so a mid-journey fallback to
+    /// local alerting resumes from the present instead of replaying history.
+    func recordSnapshot(
+        platform: String?,
+        isPredictedPlatform: Bool,
+        expectedDeparture: String?,
+        isCancelled: Bool
+    ) {
+        lastSnapshot = Snapshot(
+            platform: normalizedPlatform(platform),
+            isPredictedPlatform: isPredictedPlatform,
+            expectedDeparture: expectedDeparture,
+            isCancelled: isCancelled
+        )
+    }
+
+    /// Drops the comparison baseline after the app wakes from suspension —
+    /// the next evaluation records state without emitting, so changes that
+    /// accumulated while suspended never replay as a burst of stale alerts.
+    func rebaseline() {
+        lastSnapshot = nil
+    }
+
+    /// Consumes the stop-is-next one-shot when the backend pushed that alert.
+    func markStopIsNextHandled() {
+        didNotifyStopIsNext = true
+    }
+
+    /// Clears a pended "departing soon" reminder once departure is confirmed
+    /// elsewhere — without this it can fire after the train has left.
+    func clearDepartureReminder() {
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: ["\(serviceId)-departing-soon"])
+    }
+
     func reset() {
         lastSnapshot = nil
         didNotifyStopIsNext = false

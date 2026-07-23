@@ -58,6 +58,12 @@ final class TrainTracker {
     // one. Gates the "boarding" state — see isBoarding.
     private var announcedPlatform: String?
 
+    /// True while the backend can push journey alerts for this Live Activity
+    /// — the app then stays silent locally so each alert arrives exactly
+    /// once, including while suspended. Local alerting remains the fallback
+    /// when registration never succeeded (no rid, activities disabled).
+    private var backendOwnsAlerts: Bool { activity != nil && registeredPushToken != nil }
+
     // One-shot notification state for the tracked journey. Baselined on the
     // first poll so a resumed session doesn't replay old alerts.
     private var notificationBaselineSet = false
@@ -605,6 +611,15 @@ final class TrainTracker {
             )
         }
 
+        // Waking after suspension delivers everything missed as one delta —
+        // replaying it would flood the user with stale alerts, so alerting
+        // re-baselines to the present. One-shots that are still true now
+        // (stop-is-next) may still fire below.
+        if let last = lastPolled, Date().timeIntervalSince(last) > 180 {
+            notificationBaselineSet = false
+            notificationManager.rebaseline()
+        }
+
         trackedStops = personalStops(updatedStops)
         stopTimes = TrainTracker.parseStopTimes(trackedStops)
         lastPolled = Date()
@@ -624,14 +639,23 @@ final class TrainTracker {
         announcedPlatform = confirmedPlatform
         let isPredicted = confirmedPlatform == nil && details.predictedPlatform != nil
         let platformToReport = confirmedPlatform ?? details.predictedPlatform?.platform
-        notificationManager.evaluateChanges(
-            platform: platformToReport,
-            isPredictedPlatform: isPredicted,
-            expectedDeparture: details.expectedDeparture,
-            scheduledDeparture: details.scheduledDeparture ?? train.time,
-            isCancelled: details.isCancelled,
-            hasDepartedBoardingStation: boardingHasDeparted
-        )
+        if backendOwnsAlerts {
+            notificationManager.recordSnapshot(
+                platform: platformToReport,
+                isPredictedPlatform: isPredicted,
+                expectedDeparture: details.expectedDeparture,
+                isCancelled: details.isCancelled
+            )
+        } else {
+            notificationManager.evaluateChanges(
+                platform: platformToReport,
+                isPredictedPlatform: isPredicted,
+                expectedDeparture: details.expectedDeparture,
+                scheduledDeparture: details.scheduledDeparture ?? train.time,
+                isCancelled: details.isCancelled,
+                hasDepartedBoardingStation: boardingHasDeparted
+            )
+        }
 
         // Write the fresh platform back onto the observable train BEFORE the
         // Live Activity update reads it — otherwise the lock screen and the
@@ -656,11 +680,17 @@ final class TrainTracker {
         }
 
         if boardingHasDeparted {
-            if !didNotifyDeparted,
-               notificationManager.notifyDeparted(from: boardingStation?.name ?? "the station") {
-                // Consume the one-shot only when the alert was actually
-                // scheduled — a not-yet-authorized attempt retries next poll.
-                didNotifyDeparted = true
+            if !didNotifyDeparted {
+                if backendOwnsAlerts {
+                    // The backend pushed this alert; the pended "departing
+                    // soon" reminder is now stale and must still be cleared.
+                    notificationManager.clearDepartureReminder()
+                    didNotifyDeparted = true
+                } else if notificationManager.notifyDeparted(from: boardingStation?.name ?? "the station") {
+                    // Consume the one-shot only when the alert was actually
+                    // scheduled — a not-yet-authorized attempt retries next poll.
+                    didNotifyDeparted = true
+                }
             }
         } else if !details.isCancelled,
                   let bIdx = trackedStops.firstIndex(where: { $0.crs == boardingStation?.code }),
@@ -673,14 +703,18 @@ final class TrainTracker {
         // marker only advances when the alert was actually scheduled (or
         // needed no alert), so a blocked attempt retries next poll.
         if nextStopIndex > lastNotifiedNextStop {
-            let alertable = nextStopIndex < trackedStops.count - 1
-                && trackedStops.contains(where: { $0.hasDeparted })
-            if !alertable || notificationManager.notifyNextStop(
-                trackedStops[nextStopIndex].station,
-                expectedTime: TrainTracker.clockTimeString(for: trackedStops[nextStopIndex]),
-                stopsToGo: trackedStops.count - 1 - nextStopIndex
-            ) {
+            if backendOwnsAlerts {
                 lastNotifiedNextStop = nextStopIndex
+            } else {
+                let alertable = nextStopIndex < trackedStops.count - 1
+                    && trackedStops.contains(where: { $0.hasDeparted })
+                if !alertable || notificationManager.notifyNextStop(
+                    trackedStops[nextStopIndex].station,
+                    expectedTime: TrainTracker.clockTimeString(for: trackedStops[nextStopIndex]),
+                    stopsToGo: trackedStops.count - 1 - nextStopIndex
+                ) {
+                    lastNotifiedNextStop = nextStopIndex
+                }
             }
         }
 
@@ -691,7 +725,11 @@ final class TrainTracker {
            nextStopIndex == trackedStops.count - 1,
            currentStopIndex == nextStopIndex - 1,
            trackedStops.contains(where: { $0.hasDeparted }) {
-            notificationManager.notifyStopIsNext(trackedStops[nextStopIndex].station)
+            if backendOwnsAlerts {
+                notificationManager.markStopIsNextHandled()
+            } else {
+                notificationManager.notifyStopIsNext(trackedStops[nextStopIndex].station)
+            }
         }
 
         // End tracking only on evidence of arrival at the destination — an
