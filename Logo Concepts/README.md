@@ -8,6 +8,6 @@ The mark is deliberately **TV first, route map second**:
 - The lime centre at the foot of the V acts as the single live-status accent.
 - The monogram sits inside the central 74% of the square so iOS masks do not crowd it.
 
-`Trainview-TV-AppIcon.svg` is the compact square lockup for iOS, with the wordmark sized to remain visible at icon scale. `Trainview-TV-Lockup.svg` is the larger lockup for the website, launch material and press use.
+`Trainview-TV-AppIcon.svg` is the compact square lockup for iOS, with the wordmark sized to remain visible at icon scale. `Trainview-TV-AppIcon-Dark.svg` provides the matching iOS dark appearance. `Trainview-TV-Lockup.svg` is the larger lockup for the website, launch material and press use.
 
-The existing production icon has not been replaced; these files are a non-destructive logo concept until the direction is approved.
+The light and dark square lockups are installed as the production iOS app icon. Both PNG exports are 1024×1024 with no alpha channel, ready for App Store submission.

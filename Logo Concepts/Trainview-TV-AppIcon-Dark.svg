@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Trainview TV route logo, dark appearance</title>
+  <desc id="desc">The letters T and V drawn as a connected railway route above the Trainview wordmark.</desc>
+
+  <rect width="1024" height="1024" fill="#100E0A"/>
+
+  <g transform="translate(87 0) scale(.83)">
+    <g fill="none" stroke="#F4EFE3" stroke-width="52" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M145 425C235 425 215 275 320 275H512"/>
+      <path d="M320 275V745"/>
+      <path d="M512 275L700 745"/>
+      <path d="M700 745C745 610 720 345 880 275"/>
+    </g>
+
+    <g fill="#100E0A" stroke="#F4EFE3" stroke-width="20">
+      <circle cx="145" cy="425" r="35"/>
+      <circle cx="320" cy="275" r="35"/>
+      <circle cx="512" cy="275" r="35"/>
+      <circle cx="320" cy="745" r="35"/>
+      <circle cx="700" cy="745" r="35"/>
+      <circle cx="880" cy="275" r="35"/>
+    </g>
+
+    <circle cx="700" cy="745" r="14" fill="#C9E265"/>
+  </g>
+
+  <text
+    x="512"
+    y="876"
+    fill="#F4EFE3"
+    font-family="-apple-system, BlinkMacSystemFont, 'DM Sans', 'Helvetica Neue', Arial, sans-serif"
+    font-size="142"
+    font-weight="650"
+    letter-spacing="-7"
+    text-anchor="middle"
+  >Trainview</text>
+</svg>
